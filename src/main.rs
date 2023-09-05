@@ -42,16 +42,18 @@ async fn now_playing(_: Request<()>) -> tide::Result {
         .build())
 }
 
-//async fn scheduler_mainbody() {
-//    let mut interval = interval(Duration::from_secs(3));
-//    loop {
-//        interval.tick().await;
-//        print!(".");
-//        std::io::stdout().flush().expect("Failed to flush stdout");
-//    }
-//}
+use std::io::Write;
 
-#[async_std::main]
+async fn scheduler_mainbody() {
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3));
+    loop {
+        interval.tick().await;
+        print!(".");
+        std::io::stdout().flush().expect("Failed to flush stdout");
+    }
+}
+
+#[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
 	    env_logger::init();
     // Configure tracing to use a subscriber for logging
@@ -69,13 +71,12 @@ async fn main() -> Result<(), std::io::Error> {
 
     let addr = "127.0.0.1:8080";
     println!("Server listening on {}", addr);
-    app.listen(addr).await?;
-
+    let server = app.listen(addr);
 
     // Spawn a detached asynchronous task to run the scheduler_mainbody function
-    //tokio::spawn(scheduler_mainbody());
+    tokio::spawn(scheduler_mainbody());
 
     // Wait for the Tide server to finish
-    //server.await?;
+    server.await?;
     Ok(())
 }
