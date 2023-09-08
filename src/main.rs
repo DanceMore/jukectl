@@ -1,17 +1,41 @@
-use tide::{Request, Response};
-use tide::http::StatusCode;
+use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
 use std::io::Write;
-
-use mpd::Song;
-use mpd::Client;
+use std::sync::{Arc, Mutex};
+use tide::http::StatusCode;
+use tide::{Request, Response};
 
 mod mpd_conn;
 use crate::mpd_conn::MpdConn;
-//mod queue_manager;
 
-fn queue_to_filenames(song_array: Vec<Song>) -> Vec<String> {
+#[derive(Serialize, Deserialize)]
+struct TagsData {
+    any: Vec<String>,
+    not: Vec<String>,
+}
+
+struct Queue {
+    songs: Vec<mpd::Song>,
+}
+
+impl Queue {
+    fn new() -> Self {
+        Queue { songs: Vec::new() }
+    }
+
+    fn push(&mut self, song: mpd::Song) {
+        self.songs.push(song);
+    }
+
+    fn pop(&mut self) -> Option<mpd::Song> {
+        self.songs.pop()
+    }
+
+    // Other methods for managing the queue
+}
+
+fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
     let mut filename_array = Vec::new();
 
     for song in song_array {
@@ -22,9 +46,8 @@ fn queue_to_filenames(song_array: Vec<Song>) -> Vec<String> {
 }
 
 async fn now_playing(_: Request<()>) -> tide::Result {
-    //let mut conn = Client::connect("nas.dance.more:6600").unwrap();
-    let mut pool = MpdConn::new()?;
-    let song_array = pool.mpd.queue().unwrap();
+    let mut conn = MpdConn::new()?;
+    let song_array = conn.mpd.queue().unwrap();
 
     let res = queue_to_filenames(song_array);
 
@@ -35,7 +58,6 @@ async fn now_playing(_: Request<()>) -> tide::Result {
         .content_type("application/json")
         .build())
 }
-
 
 async fn scheduler_mainbody() {
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3));
@@ -51,8 +73,17 @@ async fn main() -> Result<(), std::io::Error> {
     env_logger::init();
     let mut app = tide::new();
 
-    app.at("/").get(now_playing);
+    // Shareable TagsData with default values
+    let default_tags_data = TagsData {
+        any: vec!["jukebox".to_string()],
+        not: vec!["explicit".to_string()],
+    };
+    let tags_data = Arc::new(Mutex::new(default_tags_data));
 
+    // Shareable Queue
+    let queue = Arc::new(Mutex::new(Queue::new()));
+
+    app.at("/").get(now_playing);
 
     let addr = "127.0.0.1:8080";
     println!("Server listening on {}", addr);

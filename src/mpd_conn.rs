@@ -26,9 +26,4 @@ impl MpdConn {
 
         Ok(MpdConn { mpd })
     }
-
-    // This can be used to get the MPD client connection
-    pub fn get_conn(&self) -> &Client {
-        &self.mpd
-    }
 }
