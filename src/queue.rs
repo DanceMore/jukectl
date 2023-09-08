@@ -1,15 +1,9 @@
-#[derive(Serialize, Deserialize)]
-struct TagsData {
-    any: Vec<String>,
-    not: Vec<String>,
-}
-
-struct Queue {
+pub struct Queue {
     songs: Vec<mpd::Song>,
 }
 
 impl Queue {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Queue { songs: Vec::new() }
     }
 

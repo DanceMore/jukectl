@@ -9,31 +9,11 @@ use tide::{Request, Response};
 mod mpd_conn;
 use crate::mpd_conn::MpdConn;
 
-#[derive(Serialize, Deserialize)]
-struct TagsData {
-    any: Vec<String>,
-    not: Vec<String>,
-}
+mod queue;
+use crate::queue::Queue;
 
-struct Queue {
-    songs: Vec<mpd::Song>,
-}
-
-impl Queue {
-    fn new() -> Self {
-        Queue { songs: Vec::new() }
-    }
-
-    fn push(&mut self, song: mpd::Song) {
-        self.songs.push(song);
-    }
-
-    fn pop(&mut self) -> Option<mpd::Song> {
-        self.songs.pop()
-    }
-
-    // Other methods for managing the queue
-}
+mod tags_data;
+use crate::tags_data::TagsData;
 
 fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
     let mut filename_array = Vec::new();
