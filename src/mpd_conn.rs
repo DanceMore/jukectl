@@ -1,4 +1,4 @@
-use mpd::{Client, error::Result};
+use mpd::{error::Result, Client};
 use std::env;
 
 pub struct MpdConn {

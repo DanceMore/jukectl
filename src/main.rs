@@ -1,5 +1,5 @@
-use std::env;
 use serde_json::json;
+use std::env;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use tide::http::StatusCode;
