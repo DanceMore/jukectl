@@ -1,5 +1,4 @@
-use serde::Deserialize;
-use serde::Serialize;
+use std::env;
 use serde_json::json;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -51,7 +50,11 @@ async fn scheduler_mainbody() {
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     env_logger::init();
-    let mut app = tide::new();
+
+    // Read the BIND_HOST and BIND_PORT environment variables with default values
+    let bind_host = env::var("BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let bind_port = env::var("BIND_PORT").unwrap_or_else(|_| "8080".to_string());
+    let addr = format!("{}:{}", bind_host, bind_port);
 
     // Shareable TagsData with default values
     let default_tags_data = TagsData {
@@ -63,9 +66,12 @@ async fn main() -> Result<(), std::io::Error> {
     // Shareable Queue
     let queue = Arc::new(Mutex::new(Queue::new()));
 
+    // start building the app itself
+    let mut app = tide::new();
+
     app.at("/").get(now_playing);
 
-    let addr = "127.0.0.1:8080";
+    // bind the server to listen
     println!("Server listening on {}", addr);
     let server = app.listen(addr);
 
