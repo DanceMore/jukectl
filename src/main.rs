@@ -32,11 +32,40 @@ async fn now_playing(_: Request<()>) -> tide::Result {
 
     let json_response = json!(res).to_string();
 
-    Ok(Response::builder(StatusCode::Ok)
+    Ok(tide::Response::builder(tide::StatusCode::Ok)
         .body(tide::Body::from_string(json_response))
         .content_type("application/json")
         .build())
 }
+
+async fn get_tags(_: tide::Request<()>, tags_data: Arc<Mutex<TagsData>>) -> tide::Result {
+    // Serialize TagsData to a JSON string
+    let tags_data_json = serde_json::to_string(&*tags_data)?;
+
+    // Return a response with the JSON string
+    Ok(tide::Response::builder(tide::StatusCode::Ok)
+        .body(tide::Body::from_string(tags_data_json))
+        .content_type("application/json")
+        .build())
+}
+
+//async fn get_tags(req: Request<()>) -> tide::Result {
+//    // Retrieve TagsData from the request state
+//    let tags_data = req.state().clone();
+//
+//    // Lock the Mutex to access TagsData
+//    let tags_data = tags_data.lock().await;
+//
+//    // Serialize TagsData to a JSON string
+//    let tags_data_json = serde_json::to_string(&*tags_data)?;
+//
+//    // Return a response with the JSON string
+//    Ok(tide::Response::builder(200)
+//        .body(tide::Body::from_string(tags_data_json))
+//        .content_type("application/json")
+//        .build())
+//}
+
 
 async fn scheduler_mainbody() {
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3));
@@ -69,7 +98,9 @@ async fn main() -> Result<(), std::io::Error> {
     // start building the app itself
     let mut app = tide::new();
 
+    // routes
     app.at("/").get(now_playing);
+    app.at("/tags").get(move |_req| get_tags(_req, Arc::clone(&tags_data)));
 
     // bind the server to listen
     println!("Server listening on {}", addr);
