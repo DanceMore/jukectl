@@ -1,9 +1,17 @@
-use serde_json::json;
+#[macro_use]
+extern crate rocket;
+
+use rocket::http::Status;
+use rocket::tokio::time::{interval, Duration};
+use rocket::{Rocket, State};
+use serde::{Deserialize, Serialize};
 use std::env;
-use std::io::Write;
 use std::sync::{Arc, Mutex};
-use tide::http::StatusCode;
-use tide::{Request, Response};
+use std::thread;
+//use rocket::response::status;
+//use rocket::response::content;
+use rocket::serde::json::Json;
+use serde_json::json;
 
 mod mpd_conn;
 use crate::mpd_conn::MpdConn;
@@ -24,67 +32,61 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
     filename_array
 }
 
-async fn now_playing(_: Request<()>) -> tide::Result {
-    let mut conn = MpdConn::new()?;
+use std::io::Write;
+
+fn scheduler_mainbody() {
+    loop {
+        print!(".");
+        let _ = std::io::stdout().flush();
+        thread::sleep(Duration::from_secs(3));
+    }
+}
+
+#[get("/")]
+fn index() -> Json<Vec<String>> {
+    let mut conn = MpdConn::new().unwrap(); // You might want to handle errors differently
     let song_array = conn.mpd.queue().unwrap();
 
     let res = queue_to_filenames(song_array);
 
-    let json_response = json!(res).to_string();
-
-    Ok(tide::Response::builder(tide::StatusCode::Ok)
-        .body(tide::Body::from_string(json_response))
-        .content_type("application/json")
-        .build())
+    Json(res)
 }
 
-async fn get_tags(_: tide::Request<()>, tags_data: Arc<Mutex<TagsData>>) -> tide::Result {
-    // Serialize TagsData to a JSON string
-    let tags_data_json = serde_json::to_string(&*tags_data)?;
-
-    // Return a response with the JSON string
-    Ok(tide::Response::builder(tide::StatusCode::Ok)
-        .body(tide::Body::from_string(tags_data_json))
-        .content_type("application/json")
-        .build())
+#[get("/tags")]
+fn tags(tags_data: &State<Arc<Mutex<TagsData>>>) -> Json<TagsData> {
+    let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
+    Json(locked_tags_data.clone())
 }
 
-//async fn get_tags(req: Request<()>) -> tide::Result {
-//    // Retrieve TagsData from the request state
-//    let tags_data = req.state().clone();
+#[post("/tags", data = "<tags_data>")]
+fn update_tags(
+    tags_data: Json<TagsData>,
+    shared_tags_data: &State<Arc<Mutex<TagsData>>>,
+) -> Json<TagsData> {
+    let mut locked_data = shared_tags_data.lock().expect("Failed to lock TagsData");
+    *locked_data = tags_data.0.clone();
+    Json(locked_data.clone())
+}
+
+//#[rocket::main]
+//async fn main() -> Result<(), rocket::Error> {
+//    env_logger::init();
 //
-//    // Lock the Mutex to access TagsData
-//    let tags_data = tags_data.lock().await;
+//    // Read the BIND_HOST and BIND_PORT environment variables with default values
+//    let bind_host = env::var("BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+//    let bind_port = env::var("BIND_PORT").unwrap_or_else(|_| "8080".to_string());
+//    let addr = format!("{}:{}", bind_host, bind_port);
 //
-//    // Serialize TagsData to a JSON string
-//    let tags_data_json = serde_json::to_string(&*tags_data)?;
 //
-//    // Return a response with the JSON string
-//    Ok(tide::Response::builder(200)
-//        .body(tide::Body::from_string(tags_data_json))
-//        .content_type("application/json")
-//        .build())
+//    // Launch the Rocket app
+//    rocket::ignite().mount("/hello", routes![world]);
+//
+//
+//    Ok(())
 //}
 
-
-async fn scheduler_mainbody() {
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3));
-    loop {
-        interval.tick().await;
-        print!(".");
-        std::io::stdout().flush().expect("Failed to flush stdout");
-    }
-}
-
-#[tokio::main]
-async fn main() -> Result<(), std::io::Error> {
-    env_logger::init();
-
-    // Read the BIND_HOST and BIND_PORT environment variables with default values
-    let bind_host = env::var("BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let bind_port = env::var("BIND_PORT").unwrap_or_else(|_| "8080".to_string());
-    let addr = format!("{}:{}", bind_host, bind_port);
-
+#[launch]
+fn rocket() -> _ {
     // Shareable TagsData with default values
     let default_tags_data = TagsData {
         any: vec!["jukebox".to_string()],
@@ -92,24 +94,10 @@ async fn main() -> Result<(), std::io::Error> {
     };
     let tags_data = Arc::new(Mutex::new(default_tags_data));
 
-    // Shareable Queue
-    let queue = Arc::new(Mutex::new(Queue::new()));
-
-    // start building the app itself
-    let mut app = tide::new();
-
-    // routes
-    app.at("/").get(now_playing);
-    app.at("/tags").get(move |_req| get_tags(_req, Arc::clone(&tags_data)));
-
-    // bind the server to listen
-    println!("Server listening on {}", addr);
-    let server = app.listen(addr);
-
     // Spawn a detached asynchronous task to run the scheduler_mainbody function
-    tokio::spawn(scheduler_mainbody());
+    thread::spawn(|| scheduler_mainbody());
 
-    // Wait for the Tide server to finish
-    server.await?;
-    Ok(())
+    rocket::build()
+        .manage(tags_data) // Pass TagsData as a state
+        .mount("/", routes![index, tags, update_tags])
 }
