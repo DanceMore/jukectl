@@ -16,3 +16,6 @@ rocket = { version = "0.5.0-rc.2", features = ["json"] }
 queues = "1.0.2"
 lazy_static = "1.4.0"
 log = "0.4.20"
+
+[dev-dependencies]
+cargo-geiger = "0.6"
