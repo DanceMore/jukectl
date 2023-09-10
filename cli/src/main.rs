@@ -6,7 +6,6 @@ extern crate reqwest;
 extern crate serde;
 extern crate tokio;
 
-use clap::{App, Arg};
 use colored::*;
 use dotenv::dotenv;
 
@@ -20,6 +19,53 @@ use crate::banner::print_banner;
 mod models;
 use crate::models::tags_data::parse_tags_data_from_argv;
 use crate::models::tags_data::TagsData;
+
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+#[command(propagate_version = true)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Display current status of service
+    Status,
+    /// Tag an item
+    Tag(TagArgs),
+    /// Untag an item
+    Untag(UntagArgs),
+    /// Skip an item
+    Skip,
+    /// Playback with tags
+    Playback(PlaybackArgs),
+}
+
+#[derive(Parser)]
+struct StatusArgs;
+
+#[derive(Parser)]
+struct TagArgs {
+    #[clap(help = "Name of the tag", required = true)]
+    tag_name: String,
+}
+
+#[derive(Parser)]
+struct UntagArgs {
+    #[clap(help = "Name of the tag", required = true)]
+    tag_name: String,
+}
+
+#[derive(Parser)]
+struct PlaybackArgs {
+    #[clap(help = "Tags for playback", required = true)]
+    tags: String,
+    #[clap(help = "Tags to exclude from playback")]
+    not_tags: Option<String>,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,70 +90,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // clap crate, giving me almost Ruby-Thor library vibes and easy
     // command-line arg parsing :D
-    let matches = App::new("jukectl")
-        .about("command-line remote control for jukectl music player service")
-        .subcommand(App::new("status").about("Display current status of service"))
-        .subcommand(
-            App::new("tag").about("Tag an item").arg(
-                Arg::with_name("TagName")
-                    .help("Name of the tag")
-                    .required(true),
-            ),
-        )
-        .subcommand(
-            App::new("untag").about("Untag an item").arg(
-                Arg::with_name("TagName")
-                    .help("Name of the tag")
-                    .required(true),
-            ),
-        )
-        .subcommand(App::new("skip").about("Skip an item"))
-        .subcommand(
-            App::new("playback")
-                .about("Playback with tags")
-                .arg(
-                    Arg::with_name("tags")
-                        .help("Tags for playback")
-                        .required(true),
-                )
-                .arg(
-                    Arg::with_name("not_tags")
-                        .help("Tags to exclude from playback")
-                        .required(false),
-                ),
-        )
-        .get_matches();
+    let cli = Cli::parse();
 
-    // Handle subcommands
-    match matches.subcommand() {
-        ("status", _) => match status(&api_hostname).await {
-            Ok(_) => debug!("[-] status() function completed successfully."),
-            Err(err) => eprintln!("[!] Error: {}", err),
-        },
-        ("tag", Some(tag_matches)) => {
-            let add_tag = tag_matches.value_of("TagName").unwrap().to_string();
-            tag(&api_hostname, add_tag).await?;
-        }
-        ("untag", Some(untag_matches)) => {
-            let remove_tag = untag_matches.value_of("TagName").unwrap().to_string();
-            untag(&api_hostname, remove_tag).await?;
-        }
-        ("skip", Some(_)) => match skip_item(&api_hostname).await {
-            Ok(_) => debug!("[-] skip() function completed successfully."),
-            Err(err) => eprintln!("[!] Error: {}", err),
-        },
-        ("playback", Some(playback_matches)) => {
-            let tags = playback_matches.value_of("tags").unwrap_or("");
-            let not_tags = playback_matches.value_of("not_tags").unwrap_or("");
-
-            let tags_data = parse_tags_data_from_argv(tags, not_tags);
-
-            match playback(&api_hostname, &tags_data).await {
-                Ok(_) => debug!("[-] playback() function completed successfully."),
+    match cli.command {
+        Commands::Status => {
+            // Handle status subcommand
+            match status(&api_hostname).await {
+                Ok(_) => debug!("Status: OK"),
                 Err(err) => eprintln!("[!] Error: {}", err),
             }
         }
-        _ => println!("Invalid subcommand. Use 'jukectl --help' for usage."),
+        Commands::Tag(args) => {
+            // Handle tag subcommand
+            debug!("Tag an item with name: {:?}", args.tag_name);
+            tag(&api_hostname, args.tag_name.to_string()).await?;
+        }
+        Commands::Untag(args) => {
+            debug!("Untag an item with name: {:?}", args.tag_name);
+            untag(&api_hostname, args.tag_name.to_string()).await?;
+        }
+        Commands::Skip => {
+            // Handle skip subcommand
+            match skip_item(&api_hostname).await {
+                Ok(_) => debug!("Skipped item"),
+                Err(err) => eprintln!("[!] Error: {}", err),
+            }
+        }
+        Commands::Playback(args) => {
+            let not_tags = match args.not_tags {
+                Some(tags) => tags,
+                None => "".to_string(), // Or use your preferred default value
+            };
+
+            let tags_data = parse_tags_data_from_argv(&args.tags, &not_tags);
+            match playback(&api_hostname, &tags_data).await {
+                Ok(_) => debug!("Playback started with tags: {:?}", tags_data),
+                Err(err) => eprintln!("[!] Error: {}", err),
+            }
+        }
     }
 
     Ok(())
