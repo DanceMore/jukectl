@@ -85,7 +85,7 @@ impl SongQueue {
         // Convert HashSet to Vec for shuffling
         let mut song_vec: Vec<mpd::Song> = songs
             .into_iter()
-            .map(|song| mpd::Song::from(song))
+            .map(mpd::Song::from)
             .collect();
         let mut rng = rand::thread_rng();
         song_vec.shuffle(&mut rng);

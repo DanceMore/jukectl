@@ -11,7 +11,6 @@ use dotenv::dotenv;
 
 #[allow(unused_imports)]
 use log::{debug, error, info, warn};
-use serde_json;
 
 mod banner;
 use crate::banner::print_banner;
