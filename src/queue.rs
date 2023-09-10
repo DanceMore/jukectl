@@ -1,3 +1,4 @@
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Queue {
     songs: Vec<mpd::Song>,
 }
