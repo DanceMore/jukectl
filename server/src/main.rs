@@ -241,12 +241,18 @@ fn get_queue_length(song_queue: &rocket::State<Arc<Mutex<SongQueue>>>) -> Json<Q
 //    res_new = queue_to_filenames(new_pls)
 //    json({:old => res_old, :new => res_new})
 
+#[derive(rocket::serde::Serialize)]
+struct ShuffleResponse {
+    old: Vec<String>,
+    new: Vec<String>,
+}
+
 #[post("/shuffle")]
 fn shuffle_songs(
     song_queue: &rocket::State<Arc<Mutex<SongQueue>>>,
     tags_data: &rocket::State<Arc<Mutex<TagsData>>>,
     mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>,
-) -> Json<String> {
+) -> Json<ShuffleResponse> {
     let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MpdConn");
     let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
     let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
@@ -256,18 +262,32 @@ fn shuffle_songs(
 
     // Handle the case where there are no valid songs
     if songs.is_empty() {
-        return Json("No valid songs to play. Bad human! No cookie!".to_string());
+        return Json(ShuffleResponse {
+            old: Vec::new(),
+            new: Vec::new(),
+        });
     }
+
+    // Capture the old songs before shuffling
+    let old_songs = (*locked_song_queue).head().clone();
 
     // Use a method on the SongQueue object to handle the shuffle and adding of songs
     locked_song_queue.shuffle_and_add(songs);
+
+    // Capture the new songs after shuffling
+    let new_songs = (*locked_song_queue).head().clone();
+
+    let response = ShuffleResponse {
+        old: queue_to_filenames(old_songs),
+        new: queue_to_filenames(new_songs),
+    };
 
     // release locks
     drop(locked_mpd_conn);
     drop(locked_song_queue);
     drop(locked_tags_data);
 
-    Json("Songs shuffled and added to the queue.".to_string())
+    Json(response)
 }
 
 #[derive(serde::Deserialize)]
