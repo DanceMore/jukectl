@@ -2,16 +2,15 @@
 extern crate rocket;
 
 use rocket::http::Status;
+use rocket::serde::json::Json;
 use rocket::tokio::time::{interval, Duration};
 use rocket::{Rocket, State};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use rocket::serde::json::Json;
 
 use std::collections::HashSet;
-
 
 use rand::seq::SliceRandom;
 
@@ -44,7 +43,6 @@ impl From<HashableSong> for mpd::Song {
     }
 }
 
-
 mod mpd_conn;
 use crate::mpd_conn::MpdConn;
 
@@ -67,34 +65,33 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
 use std::io::Write;
 use std::path::PathBuf;
 
-
 fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>) {
     loop {
-	info!("[-] scheduler firing");
+        info!("[-] scheduler firing");
 
         // Access song_queue by locking the mutex
         let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
 
-	// lock mpd conn
+        // lock mpd conn
         let mpd_conn = init_mpd_conn();
         let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
 
-	let now_playing_len = locked_mpd_conn.mpd.queue().expect("REASON").len();
+        let now_playing_len = locked_mpd_conn.mpd.queue().expect("REASON").len();
 
         // only do work if the live MPD queue length is less than 2
-	// ie: 1 Song now-playing, 1 Song on-deck
+        // ie: 1 Song now-playing, 1 Song on-deck
         if now_playing_len < 2 {
             if let Some(song) = locked_song_queue.remove() {
                 locked_mpd_conn.mpd.push(song);
             }
         } else {
-	    // do nothing, but let's print to prove we worked...
+            // do nothing, but let's print to prove we worked...
             print!(".");
             let _ = std::io::stdout().flush();
         }
 
         // release our locks
-	drop(locked_mpd_conn);
+        drop(locked_mpd_conn);
         drop(locked_song_queue);
 
         // Sleep for a while
@@ -141,15 +138,27 @@ fn get_queue_length(song_queue: &State<Arc<Mutex<SongQueue>>>) -> Json<QueueResp
     let length = locked_song_queue.len(); // Get the length of the queue
 
     // TODO: I kinda hate this presentation layer formatting, but it compiles...
-    let head = locked_song_queue.head().iter().map(|song| song.file.clone()).collect::<Vec<_>>();
-    let tail = locked_song_queue.tail().iter().map(|song| song.file.clone()).collect::<Vec<_>>();
+    let head = locked_song_queue
+        .head()
+        .iter()
+        .map(|song| song.file.clone())
+        .collect::<Vec<_>>();
+    let tail = locked_song_queue
+        .tail()
+        .iter()
+        .map(|song| song.file.clone())
+        .collect::<Vec<_>>();
 
     let res = QueueResponse { length, head, tail };
     Json(res)
 }
 
 #[post("/shuffle")]
-fn shuffle_songs(song_queue: &State<Arc<Mutex<SongQueue>>>, tags_data: &State<Arc<Mutex<TagsData>>>, mpd_conn: &State<Arc<Mutex<MpdConn>>>) -> Json<String> {
+fn shuffle_songs(
+    song_queue: &State<Arc<Mutex<SongQueue>>>,
+    tags_data: &State<Arc<Mutex<TagsData>>>,
+    mpd_conn: &State<Arc<Mutex<MpdConn>>>,
+) -> Json<String> {
     let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
     let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
     let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MpdConn");
@@ -168,7 +177,6 @@ fn shuffle_songs(song_queue: &State<Arc<Mutex<SongQueue>>>, tags_data: &State<Ar
     locked_song_queue.empty_queue();
     for song in songs {
         locked_song_queue.add(mpd::Song::from(song));
-
     }
     locked_song_queue.shuffle();
 
@@ -176,8 +184,16 @@ fn shuffle_songs(song_queue: &State<Arc<Mutex<SongQueue>>>, tags_data: &State<Ar
 }
 
 fn extract_tags(tags_data: &TagsData) -> (HashSet<String>, HashSet<String>) {
-    let any_tags: HashSet<String> = tags_data.any.iter().flat_map(|s| s.split(',').map(String::from)).collect();
-    let not_tags: HashSet<String> = tags_data.not.iter().flat_map(|s| s.split(',').map(String::from)).collect();
+    let any_tags: HashSet<String> = tags_data
+        .any
+        .iter()
+        .flat_map(|s| s.split(',').map(String::from))
+        .collect();
+    let not_tags: HashSet<String> = tags_data
+        .not
+        .iter()
+        .flat_map(|s| s.split(',').map(String::from))
+        .collect();
 
     (any_tags, not_tags)
 }
@@ -211,7 +227,6 @@ fn get_allowed_songs(tags_data: &TagsData, mpd_client: &mut MpdConn) -> HashSet<
     desired_songs
 }
 
-
 fn init_mpd_conn() -> Arc<Mutex<MpdConn>> {
     let mpd_conn = MpdConn::new().expect("Failed to create MPD connection");
     Arc::new(Mutex::new(mpd_conn))
@@ -237,5 +252,8 @@ fn rocket() -> _ {
         .manage(tags_data) // Pass TagsData as a state
         .manage(song_queue) // Pass SongQueue as a state
         .manage(init_mpd_conn())
-        .mount("/", routes![index, tags, update_tags, get_queue_length, shuffle_songs])
+        .mount(
+            "/",
+            routes![index, tags, update_tags, get_queue_length, shuffle_songs],
+        )
 }

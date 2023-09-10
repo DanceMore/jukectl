@@ -1,5 +1,5 @@
-use std::collections::VecDeque;
 use rand::seq::SliceRandom;
+use std::collections::VecDeque;
 
 // Define your custom queue type
 pub struct SongQueue {
@@ -46,10 +46,10 @@ impl SongQueue {
     }
 
     pub fn shuffle(&mut self) {
-	    let mut rng = rand::thread_rng();
-	    let mut vec: Vec<mpd::Song> = self.inner.drain(..).collect();
-	    vec.shuffle(&mut rng);
-	    self.inner.extend(vec);
+        let mut rng = rand::thread_rng();
+        let mut vec: Vec<mpd::Song> = self.inner.drain(..).collect();
+        vec.shuffle(&mut rng);
+        self.inner.extend(vec);
     }
 
     pub fn empty_queue(&mut self) {
