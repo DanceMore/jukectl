@@ -12,47 +12,15 @@ use dotenv::dotenv;
 
 #[allow(unused_imports)]
 use log::{error, warn, info, debug};
-use serde::Deserialize;
 use serde::Serialize;
 use serde_json;
-use std::fmt;
-use std::process::exit;
 
 mod banner;
 use crate::banner::print_banner;
 
-// TagData, useful holder for any_tags vs not_tags
-#[derive(Serialize, Deserialize)]
-struct TagsData {
-    any: Vec<String>,
-    not: Vec<String>,
-}
-
-// Implement the Debug trait for TagsData
-impl<> fmt::Debug for TagsData<> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{\n    any: {:?},\n    not: {:?}\n}}", self.any, self.not)
-    }
-}
-
-impl<> TagsData<> {
-    fn to_json(&self) -> String {
-        match serde_json::to_string(self) {
-            Ok(json) => json,
-            Err(err) => {
-                eprintln!("[!!!] Error serializing TagsData to JSON: {}", err);
-                std::process::exit(1); // Exit with a non-zero status code
-            }
-        }
-    }
-}
-
-fn parse_tags_data(tags: &str, not_tags: &str) -> TagsData {
-    TagsData {
-        any: tags.split(',').map(|s| s.trim().to_string()).collect(),
-        not: not_tags.split(',').map(|s| s.trim().to_string()).collect(),
-    }
-}
+mod models;
+use crate::models::tags_data::TagsData;
+use crate::models::tags_data::parse_tags_data_from_argv;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -72,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("[-] jukectl API base URL: {}", api_hostname);
     } else {
         eprintln!("Error: JUKECTL_HOST environment variable is not set.");
-        exit(1);
+        std::process::exit(1);
     }
 
     // clap crate, giving me almost Ruby-Thor library vibes and easy
@@ -145,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let tags = playback_matches.value_of("tags").unwrap_or("");
             let not_tags = playback_matches.value_of("not_tags").unwrap_or("");
 
-            let tags_data = parse_tags_data(tags, not_tags);
+            let tags_data = parse_tags_data_from_argv(tags, not_tags);
 
             match playback(&api_hostname, &tags_data).await {
                 Ok(_) => debug!("[-] playback() function completed successfully."),
