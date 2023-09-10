@@ -12,45 +12,15 @@ use std::thread;
 
 use std::collections::HashSet;
 
-use rand::seq::SliceRandom;
-
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-//use mpd::Song as MpdSong; // Assuming this is the original Mpd Song type
-
-// Create a newtype wrapper for Mpd::Song
-pub struct HashableSong(pub mpd::Song);
-
-impl Eq for HashableSong {}
-
-impl Hash for HashableSong {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // Hash the filename field for uniqueness
-        self.0.file.hash(state);
-    }
-}
-
-impl PartialEq for HashableSong {
-    fn eq(&self, other: &Self) -> bool {
-        // Compare based on the filename field
-        self.0.file == other.0.file
-    }
-}
-
-impl From<HashableSong> for mpd::Song {
-    fn from(hashable_song: HashableSong) -> Self {
-        hashable_song.0 // Extract the inner mpd::Song
-    }
-}
+mod models;
+use crate::models::hashable_song::HashableSong;
+use crate::models::tags_data::TagsData;
 
 mod mpd_conn;
 use crate::mpd_conn::MpdConn;
 
 mod song_queue;
 use crate::song_queue::SongQueue;
-
-mod tags_data;
-use crate::tags_data::TagsData;
 
 fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
     let mut filename_array = Vec::new();
@@ -63,7 +33,6 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
 }
 
 use std::io::Write;
-use std::path::PathBuf;
 
 fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>) {
     loop {
