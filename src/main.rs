@@ -3,6 +3,7 @@ extern crate rocket;
 
 use rocket::serde::json::Json;
 use rocket::tokio::time::Duration;
+use serde::Deserialize;
 use serde::Serialize;
 
 use std::io::Write;
@@ -155,21 +156,37 @@ fn tags(tags_data: &rocket::State<Arc<Mutex<TagsData>>>) -> Json<TagsData> {
     Json(locked_tags_data.clone())
 }
 
-#[post("/tags", data = "<tags_data>")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagsUpdate {
+    pub any: Option<Vec<String>>,
+    pub not: Option<Vec<String>>,
+}
+#[post("/tags", data = "<tags_update>")]
 fn update_tags(
-    tags_data: Json<TagsData>,
+    tags_update: Json<TagsUpdate>,
     shared_tags_data: &rocket::State<Arc<Mutex<TagsData>>>,
     song_queue: &rocket::State<Arc<Mutex<SongQueue>>>,
     mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>,
 ) -> Json<TagsData> {
     let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MpdConn");
     let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
+    let mut locked_tags_data = shared_tags_data.lock().expect("Failed to lock TagsData");
 
-    let mut locked_data = shared_tags_data.lock().expect("Failed to lock TagsData");
-    *locked_data = tags_data.0.clone();
+    // Check if 'any' and 'not' fields are present and update them if needed
+    if let Some(any) = &tags_update.any {
+        locked_tags_data.any = any.clone();
+    }
+    if let Some(not) = &tags_update.not {
+        locked_tags_data.not = not.clone();
+    }
 
-    let songs = locked_data.get_allowed_songs(&mut locked_mpd_conn);
+    let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
     locked_song_queue.shuffle_and_add(songs);
+
+    // release our locks
+    drop(locked_mpd_conn);
+    drop(locked_song_queue);
+    drop(locked_tags_data);
 
     Json(locked_data.clone())
 }
