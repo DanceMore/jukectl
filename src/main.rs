@@ -70,28 +70,32 @@ use std::path::PathBuf;
 
 fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>) {
     loop {
+	info!("[-] scheduler firing");
+
         // Access song_queue by locking the mutex
         let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
 
-	let mpd_conn = init_mpd_conn();
-	let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
+	// lock mpd conn
+        let mpd_conn = init_mpd_conn();
+        let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
 
-        // Do something with the song_queue
-        println!("Queue length: {}", locked_song_queue.len());
+	let now_playing_len = locked_mpd_conn.mpd.queue().expect("REASON").len();
 
+        // only do work if the live MPD queue length is less than 2
+	// ie: 1 Song now-playing, 1 Song on-deck
+        if now_playing_len < 2 {
+            if let Some(song) = locked_song_queue.remove() {
+                locked_mpd_conn.mpd.push(song);
+            }
+        } else {
+	    // do nothing, but let's print to prove we worked...
+            print!(".");
+            let _ = std::io::stdout().flush();
+        }
 
-	// Assuming locked_song_queue.remove() returns an Option<mpd::Song>
-	if let Some(song) = locked_song_queue.remove() {
-		locked_mpd_conn.mpd.push(song);
-	} else {
-		// Handle the case when there are no more songs in the queue
-	}
-
-        // Release the lock when you're done with the data
+        // release our locks
+	drop(locked_mpd_conn);
         drop(locked_song_queue);
-
-        print!(".");
-        let _ = std::io::stdout().flush();
 
         // Sleep for a while
         thread::sleep(Duration::from_secs(3));

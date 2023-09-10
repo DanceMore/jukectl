@@ -742,6 +742,8 @@ version = "0.1.0"
 dependencies = [
  "async-std",
  "env_logger",
+ "lazy_static",
+ "log",
  "mpd",
  "queues",
  "rand",
