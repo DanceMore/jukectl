@@ -3,6 +3,7 @@ use colored::*;
 
 // painstakeingly hand-crafted ASCII art coloring
 // because street culture is life
+#[rustfmt::skip]
 pub fn print_banner() {
     println!("{}{}{}",    "       __".red().bold(), "       __".green().bold(),"                  __  .__    ".blue().bold());
     println!("{}{}{}{}{}",  "      |__|".red().bold(),"__ __".yellow().bold(), "|  | __".green().bold()," ____ ".cyan().bold(),  "  _____/  |_|  |   ".blue().bold());
