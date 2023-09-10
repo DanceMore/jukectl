@@ -80,14 +80,26 @@ fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mutex<Ta
     }
 }
 
+
+//#[derive(Serialize)]
+//struct IndexResponse {
+//    #[serde(skip_serializing_if = "Vec::is_empty")]
+//    songs: Vec<String>,
+//}
 #[get("/")]
 fn index(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<Vec<String>> {
     let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
-    let song_array = locked_mpd_conn.mpd.queue().unwrap();
+
+    // Attempt to retrieve the song queue
+    let song_array = match locked_mpd_conn.mpd.queue() {
+        Ok(queue) => queue,
+        Err(_) => Vec::new(),
+    };
 
     let res = queue_to_filenames(song_array);
 
     drop(locked_mpd_conn);
+
     Json(res)
 }
 
