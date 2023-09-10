@@ -91,21 +91,39 @@ fn index(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<Vec<String>> {
     Json(res)
 }
 
-// TODO: return a better response object
-// Ruby example
-//    res = {}
-//    res['skipped'] = np[0].file
-//    res['new']     = np[1].file
+#[derive(Serialize)]
+struct SkipResponse {
+    skipped: String,
+    new: String,
+}
 #[post("/skip")]
-fn skip(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<String> {
+fn skip(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<SkipResponse> {
     let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
 
+    // Get the first song from the now playing queue
+    let now_playing_queue = locked_mpd_conn
+        .mpd
+        .queue()
+        .expect("Failed to get MPD queue");
+
+    let skipped_song = now_playing_queue.get(0).map(|song| song.file.clone()).unwrap_or_default();
+    let new_song = now_playing_queue.get(1).map(|song| song.file.clone()).unwrap_or_default();
+
+    // Delete the first song (skip)
     // the API docs feel like I should be using mpd.next()
-    // but tha call seemed to do nothing ....? delete(0) is equivalent.
+    // but that call seemed to do nothing ....? delete(0) is equivalent.
     let _res = locked_mpd_conn.mpd.delete(0);
 
+    // all done, drop the lock ASAP
     drop(locked_mpd_conn);
-    Json("skipped".to_string())
+
+    // Create the response struct with the data
+    let response = SkipResponse {
+        skipped: skipped_song,
+        new: new_song,
+    };
+
+    Json(response)
 }
 
 #[get("/tags")]
