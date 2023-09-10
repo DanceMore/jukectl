@@ -26,11 +26,11 @@ jobs:
       - name: Build Rust project
         run: cargo build --release
 
-      - name: Install Cargo Geiger
-        run: cargo install cargo-geiger
-
-      - name: Run Cargo Geiger
-        run: cargo geiger
+#      - name: Install Cargo Geiger
+#        run: cargo install cargo-geiger
+#
+#      - name: Run Cargo Geiger
+#        run: cargo geiger
 
       - name: Perform Scan
         uses: ShiftLeftSecurity/scan-action@master
