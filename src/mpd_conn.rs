@@ -7,7 +7,7 @@ pub struct MpdConn {
 
 impl MpdConn {
     pub fn new() -> Result<Self> {
-        info!("[!] connecting to mpd...");
+        println!("[!] connecting to mpd...");
 
         // Get environment variables for MPD configuration
         let host = env::var("MPD_HOST").unwrap_or_else(|_| "localhost".to_string());

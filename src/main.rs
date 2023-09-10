@@ -28,13 +28,9 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
 }
 
 // TODO: move out of main.rs
-fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mutex<TagsData>>) {
-    // make sure this is outside the loop to stop spamming connection attempts.
-    let mpd_conn = init_mpd_conn();
-
+fn scheduler_mainbody(mpd_conn: Arc<Mutex<MpdConn>>, song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mutex<TagsData>>) {
     loop {
         debug!("[-] scheduler firing");
-
         // get locks
         let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
         let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
@@ -301,15 +297,11 @@ fn update_song_tags(
     Json("Tags updated successfully".to_string())
 }
 
-// the Arc/Mutex is here ....
-fn init_mpd_conn() -> Arc<Mutex<MpdConn>> {
-    let mpd_conn = MpdConn::new().expect("Failed to create MPD connection");
-    Arc::new(Mutex::new(mpd_conn))
-}
-
 #[launch]
 fn rocket() -> _ {
-    let mpd_conn = init_mpd_conn();
+    // share the MpdConn and SongQueue
+    let mpd_conn = Arc::new(Mutex::new( MpdConn::new().expect("Failed to create MPD connection") ));
+    let song_queue = Arc::new(Mutex::new(SongQueue::new()));
 
     // Shareable TagsData with default values
     let default_tags_data = TagsData {
@@ -317,8 +309,6 @@ fn rocket() -> _ {
         not: vec!["explicit".to_string()],
     };
     let tags_data = Arc::new(Mutex::new(default_tags_data));
-
-    let song_queue = Arc::new(Mutex::new(SongQueue::new()));
 
     // acquire locks for initial setup...
     let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MpdConn");
@@ -335,16 +325,17 @@ fn rocket() -> _ {
     drop(locked_tags_data);
 
     // build some accessors for our Scheduler...
+    let mpd_conn_clone = Arc::clone(&mpd_conn);
     let song_queue_clone = Arc::clone(&song_queue);
     let tags_data_clone = Arc::clone(&tags_data);
 
     // Spawn a detached asynchronous task to run the scheduler_mainbody function
-    thread::spawn(|| scheduler_mainbody(song_queue_clone, tags_data_clone));
+    thread::spawn(|| scheduler_mainbody(mpd_conn_clone, song_queue_clone, tags_data_clone));
 
     rocket::build()
         .manage(tags_data) // Pass TagsData as a rocket::State
         .manage(song_queue) // Pass SongQueue as a rocket::State
-        .manage(init_mpd_conn())
+        .manage(mpd_conn)
         .mount(
             "/",
             routes![
