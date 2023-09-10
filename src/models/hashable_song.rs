@@ -1,4 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 // Create a newtype wrapper for Mpd::Song

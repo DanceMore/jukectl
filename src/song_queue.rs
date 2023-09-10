@@ -1,6 +1,6 @@
 use rand::seq::SliceRandom;
-use std::collections::VecDeque;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 
 use crate::HashableSong;
 
@@ -28,6 +28,7 @@ impl SongQueue {
     }
 
     // Peek at the next song in the queue
+    #[allow(dead_code)]
     pub fn peek(&self) -> Option<&mpd::Song> {
         self.inner.front()
     }
@@ -59,7 +60,7 @@ impl SongQueue {
         self.inner.clear();
     }
 
-   // Shuffle the provided songs and add them to the queue
+    // Shuffle the provided songs and add them to the queue
     pub fn shuffle_and_add(&mut self, songs: HashSet<HashableSong>) {
         self.empty_queue();
         for song in songs {

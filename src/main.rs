@@ -1,14 +1,10 @@
 #[macro_use]
 extern crate rocket;
 
-use rocket::http::Status;
 use rocket::serde::json::Json;
-use rocket::tokio::time::{interval, Duration};
-use rocket::{Rocket, State};
-use serde::{Deserialize, Serialize};
+use rocket::tokio::time::Duration;
+use serde::Serialize;
 
-use std::collections::HashSet;
-use std::env;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -50,7 +46,11 @@ fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>) {
         // ie: 1 Song now-playing, 1 Song on-deck
         if now_playing_len < 2 {
             if let Some(song) = locked_song_queue.remove() {
-                locked_mpd_conn.mpd.push(song);
+                if let Err(error) = locked_mpd_conn.mpd.push(song.clone()) {
+                    // Handle the error here or propagate it up to the caller
+                    // In this example, we're printing the error and continuing
+                    eprintln!("Error pushing song to MPD: {}", error);
+                }
             }
         } else {
             // do nothing, but let's print to prove we worked...
@@ -68,9 +68,9 @@ fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>) {
 }
 
 #[get("/")]
-fn index(mpd_conn: &State<Arc<Mutex<MpdConn>>>) -> Json<Vec<String>> {
+fn index(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<Vec<String>> {
     let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
-    let mut song_array = locked_mpd_conn.mpd.queue().unwrap();
+    let song_array = locked_mpd_conn.mpd.queue().unwrap();
 
     let res = queue_to_filenames(song_array);
 
@@ -78,7 +78,7 @@ fn index(mpd_conn: &State<Arc<Mutex<MpdConn>>>) -> Json<Vec<String>> {
 }
 
 #[get("/tags")]
-fn tags(tags_data: &State<Arc<Mutex<TagsData>>>) -> Json<TagsData> {
+fn tags(tags_data: &rocket::State<Arc<Mutex<TagsData>>>) -> Json<TagsData> {
     let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
     Json(locked_tags_data.clone())
 }
@@ -86,7 +86,7 @@ fn tags(tags_data: &State<Arc<Mutex<TagsData>>>) -> Json<TagsData> {
 #[post("/tags", data = "<tags_data>")]
 fn update_tags(
     tags_data: Json<TagsData>,
-    shared_tags_data: &State<Arc<Mutex<TagsData>>>,
+    shared_tags_data: &rocket::State<Arc<Mutex<TagsData>>>,
 ) -> Json<TagsData> {
     let mut locked_data = shared_tags_data.lock().expect("Failed to lock TagsData");
     *locked_data = tags_data.0.clone();
@@ -101,7 +101,7 @@ struct QueueResponse {
 }
 
 #[get("/queue")]
-fn get_queue_length(song_queue: &State<Arc<Mutex<SongQueue>>>) -> Json<QueueResponse> {
+fn get_queue_length(song_queue: &rocket::State<Arc<Mutex<SongQueue>>>) -> Json<QueueResponse> {
     let locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
     let length = locked_song_queue.len(); // Get the length of the queue
 
@@ -123,9 +123,9 @@ fn get_queue_length(song_queue: &State<Arc<Mutex<SongQueue>>>) -> Json<QueueResp
 
 #[post("/shuffle")]
 fn shuffle_songs(
-    song_queue: &State<Arc<Mutex<SongQueue>>>,
-    tags_data: &State<Arc<Mutex<TagsData>>>,
-    mpd_conn: &State<Arc<Mutex<MpdConn>>>,
+    song_queue: &rocket::State<Arc<Mutex<SongQueue>>>,
+    tags_data: &rocket::State<Arc<Mutex<TagsData>>>,
+    mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>,
 ) -> Json<String> {
     let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
     let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
@@ -184,8 +184,8 @@ fn rocket() -> _ {
     thread::spawn(|| scheduler_mainbody(song_queue_clone));
 
     rocket::build()
-        .manage(tags_data) // Pass TagsData as a state
-        .manage(song_queue) // Pass SongQueue as a state
+        .manage(tags_data) // Pass TagsData as a rocket::State
+        .manage(song_queue) // Pass SongQueue as a rocket::State
         .manage(init_mpd_conn())
         .mount(
             "/",
