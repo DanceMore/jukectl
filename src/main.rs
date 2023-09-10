@@ -188,7 +188,7 @@ fn update_tags(
     drop(locked_song_queue);
     drop(locked_tags_data);
 
-    Json(locked_data.clone())
+    Json(locked_tags_data.clone())
 }
 
 #[derive(Serialize)]
