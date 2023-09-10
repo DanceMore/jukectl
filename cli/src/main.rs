@@ -12,7 +12,6 @@ use dotenv::dotenv;
 
 #[allow(unused_imports)]
 use log::{error, warn, info, debug};
-use serde::Serialize;
 use serde_json;
 
 mod banner;
