@@ -27,6 +27,7 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
     filename_array
 }
 
+// TODO: move out of main.rs
 fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mutex<TagsData>>) {
     loop {
         debug!("[-] scheduler firing");
@@ -85,15 +86,24 @@ fn index(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<Vec<String>> {
     let song_array = locked_mpd_conn.mpd.queue().unwrap();
 
     let res = queue_to_filenames(song_array);
-    drop(locked_mpd_conn);
 
+    drop(locked_mpd_conn);
     Json(res)
 }
 
+// TODO: return a better response object
+// Ruby example
+//    res = {}
+//    res['skipped'] = np[0].file
+//    res['new']     = np[1].file
 #[post("/skip")]
 fn skip(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<String> {
     let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
+
+    // the API docs feel like I should be using mpd.next()
+    // but tha call seemed to do nothing ....? delete(0) is equivalent.
     let _res = locked_mpd_conn.mpd.delete(0);
+
     drop(locked_mpd_conn);
     Json("skipped".to_string())
 }
@@ -151,6 +161,16 @@ fn get_queue_length(song_queue: &rocket::State<Arc<Mutex<SongQueue>>>) -> Json<Q
     Json(res)
 }
 
+// TODO: implement JSON return struct, maybe rename to reload to match old API ..?
+// POST /shuffle is new in Rust
+// Ruby used POST /reload
+//
+//    old_pls = arr[0..3]
+//    new_pls = arr[0..3]
+//    res_old = queue_to_filenames(old_pls)
+//    res_new = queue_to_filenames(new_pls)
+//    json({:old => res_old, :new => res_new})
+
 #[post("/shuffle")]
 fn shuffle_songs(
     song_queue: &rocket::State<Arc<Mutex<SongQueue>>>,
@@ -178,6 +198,66 @@ fn shuffle_songs(
     drop(locked_tags_data);
 
     Json("Songs shuffled and added to the queue.".to_string())
+}
+
+#[derive(serde::Deserialize)]
+struct SongTagsUpdate {
+    add: Vec<String>,
+    remove: Vec<String>,
+}
+
+#[post("/song/tags", data = "<song_tags>")]
+fn update_song_tags(
+    song_tags: Json<SongTagsUpdate>,
+    mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>,
+) -> Json<String> {
+    let add_tags = &song_tags.add; // Tags to add
+    let remove_tags = &song_tags.remove; // Tags to remove
+
+    // Lock the MPD client connection
+    let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
+
+    // Get the first song from the now playing queue
+    let first_song = locked_mpd_conn
+        .mpd
+        .queue()
+        .expect("Failed to get MPD queue")
+        .first()
+        .cloned(); // Clone the song to work with
+
+    if let Some(song) = first_song {
+        for tag in add_tags {
+            println!("[!] Add song to tag {}", tag);
+            // Add the song to the playlist with the specified tag
+            if let Err(error) = locked_mpd_conn.mpd.pl_push(tag, song.clone()) {
+                eprintln!("Error adding song to tag playlist: {}", error);
+            }
+        }
+
+        for tag in remove_tags {
+            println!("[!] Remove song from tag {}", tag);
+
+            // Find the song's position in the playlist with the specified tag
+            let playlist = locked_mpd_conn.mpd.playlist(tag);
+            if let Ok(playlist) = playlist {
+                if let Some(position) = playlist
+                    .iter()
+                    .position(|song_to_remove| song_to_remove.file == song.file)
+                {
+                    // Delete the song at the found position
+                    if let Err(error) = locked_mpd_conn.mpd.pl_delete(tag, position as u32) {
+                        eprintln!("Error removing song from tag playlist: {}", error);
+                    }
+                } else {
+                    println!("Song not found in the playlist with tag {}", tag);
+                }
+            } else {
+                eprintln!("Error getting playlist: {}", playlist.err().unwrap());
+            }
+        }
+    }
+
+    Json("Tags updated successfully".to_string())
 }
 
 // the Arc/Mutex is here ....
@@ -232,7 +312,8 @@ fn rocket() -> _ {
                 update_tags,
                 get_queue_length,
                 shuffle_songs,
-                skip
+                skip,
+                update_song_tags
             ],
         )
 }
