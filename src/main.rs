@@ -180,6 +180,16 @@ fn update_tags(
         locked_tags_data.not = not.clone();
     }
 
+    // If 'not' field is not empty, empty the 'TagsData.not' field
+    if !tags_update
+        .not
+        .as_ref()
+        .map(|v| v.is_empty())
+        .unwrap_or(true)
+    {
+        locked_tags_data.not.clear();
+    }
+
     let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
     locked_song_queue.shuffle_and_add(songs);
 
