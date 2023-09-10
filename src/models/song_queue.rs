@@ -50,22 +50,47 @@ impl SongQueue {
     }
 
     pub fn shuffle(&mut self) {
+        // Start the timer
+        let start_time = std::time::Instant::now();
+
         let mut rng = rand::thread_rng();
         let mut vec: Vec<mpd::Song> = self.inner.drain(..).collect();
         vec.shuffle(&mut rng);
         self.inner.extend(vec);
+
+        // Stop the timer
+        let elapsed_time = start_time.elapsed();
+        println!("shuffle took: {:?}", elapsed_time);
     }
 
     pub fn empty_queue(&mut self) {
         self.inner.clear();
     }
 
-    // Shuffle the provided songs and add them to the queue
     pub fn shuffle_and_add(&mut self, songs: HashSet<HashableSong>) {
+        // Start the timer
+        let start_time = std::time::Instant::now();
+
+        // Reserve space in the VecDeque for the songs
+        self.inner.reserve(songs.len());
+
+        // Empty the queue
         self.empty_queue();
-        for song in songs {
-            self.add(mpd::Song::from(song));
+
+        // Convert HashSet to Vec for shuffling
+        let mut song_vec: Vec<mpd::Song> = songs
+            .into_iter()
+            .map(|song| mpd::Song::from(song))
+            .collect();
+        let mut rng = rand::thread_rng();
+        song_vec.shuffle(&mut rng);
+
+        for song in song_vec {
+            self.add(song);
         }
-        self.shuffle();
+
+        // Stop the timer
+        let elapsed_time = start_time.elapsed();
+        println!("shuffle_and_add took: {:?}", elapsed_time);
     }
 }

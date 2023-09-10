@@ -11,13 +11,11 @@ use std::thread;
 
 mod models;
 use crate::models::hashable_song::HashableSong;
+use crate::models::song_queue::SongQueue;
 use crate::models::tags_data::TagsData;
 
 mod mpd_conn;
 use crate::mpd_conn::MpdConn;
-
-mod song_queue;
-use crate::song_queue::SongQueue;
 
 fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
     let mut filename_array = Vec::new();
@@ -33,23 +31,27 @@ fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>) {
     loop {
         debug!("[-] scheduler firing");
 
-        // Access song_queue by locking the mutex
-        let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
-
-        // lock mpd conn
+        // get locks
         let mpd_conn = init_mpd_conn();
         let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
-
-        let now_playing_len = locked_mpd_conn.mpd.queue().expect("REASON").len();
+        let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
 
         // only do work if the live MPD queue length is less than 2
         // ie: 1 Song now-playing, 1 Song on-deck
+        let now_playing_len = locked_mpd_conn
+            .mpd
+            .queue()
+            .expect("Failed getting MPD active-queue")
+            .len();
+
         if now_playing_len < 2 {
             if let Some(song) = locked_song_queue.remove() {
                 if let Err(error) = locked_mpd_conn.mpd.push(song.clone()) {
                     // Handle the error here or propagate it up to the caller
                     // In this example, we're printing the error and continuing
                     eprintln!("Error pushing song to MPD: {}", error);
+                } else {
+                    info!("[+] scheduler adding song {}", song.file);
                 }
             }
         } else {
@@ -73,6 +75,7 @@ fn index(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<Vec<String>> {
     let song_array = locked_mpd_conn.mpd.queue().unwrap();
 
     let res = queue_to_filenames(song_array);
+    drop(locked_mpd_conn);
 
     Json(res)
 }
@@ -127,9 +130,9 @@ fn shuffle_songs(
     tags_data: &rocket::State<Arc<Mutex<TagsData>>>,
     mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>,
 ) -> Json<String> {
+    let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MpdConn");
     let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
     let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
-    let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MpdConn");
 
     // Get the desired songs
     let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
@@ -141,6 +144,11 @@ fn shuffle_songs(
 
     // Use a method on the SongQueue object to handle the shuffle and adding of songs
     locked_song_queue.shuffle_and_add(songs);
+
+    // release locks
+    drop(locked_mpd_conn);
+    drop(locked_song_queue);
+    drop(locked_tags_data);
 
     Json("Songs shuffled and added to the queue.".to_string())
 }
@@ -173,6 +181,7 @@ fn rocket() -> _ {
     let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
     locked_song_queue.shuffle_and_add(songs);
 
+    // release locks
     drop(locked_mpd_conn);
     drop(locked_song_queue);
     drop(locked_tags_data);
