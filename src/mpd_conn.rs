@@ -16,18 +16,17 @@ impl MpdConn {
             .parse()
             .expect("Failed to parse MPD_PORT as u16");
 
-
         let _password = env::var("MPD_PASS").ok();
 
         // Create an MPD client and connect
         let mut mpd = Client::connect((host.as_str(), port))?;
 
-	// TODO: upstream does not yet support passwords...
+        // TODO: upstream does not yet support passwords...
         //if let Some(pass) = password {
         //    mpd.password(pass.as_str())?;
         //}
 
-	// always set to "consume" as part of Jukectl
+        // always set to "consume" as part of Jukectl
         mpd.consume(true)?;
 
         Ok(MpdConn { mpd })
