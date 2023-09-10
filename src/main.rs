@@ -27,7 +27,7 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
     filename_array
 }
 
-fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>) {
+fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mutex<TagsData>>) {
     loop {
         debug!("[-] scheduler firing");
 
@@ -35,6 +35,15 @@ fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>) {
         let mpd_conn = init_mpd_conn();
         let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
         let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
+        let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
+
+        // make sure SongQueue is not empty
+        if locked_song_queue.len() == 0 {
+            info!("[!] scheduler sees an empty queue, refilling...");
+            // If song_queue is empty, fetch songs and add them
+            let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
+            locked_song_queue.shuffle_and_add(songs);
+        }
 
         // only do work if the live MPD queue length is less than 2
         // ie: 1 Song now-playing, 1 Song on-deck
@@ -52,6 +61,7 @@ fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>) {
                     eprintln!("Error pushing song to MPD: {}", error);
                 } else {
                     info!("[+] scheduler adding song {}", song.file);
+                    let _ = locked_mpd_conn.mpd.play();
                 }
             }
         } else {
@@ -80,6 +90,14 @@ fn index(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<Vec<String>> {
     Json(res)
 }
 
+#[post("/skip")]
+fn skip(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<String> {
+    let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
+    let _res = locked_mpd_conn.mpd.delete(0);
+    drop(locked_mpd_conn);
+    Json("skipped".to_string())
+}
+
 #[get("/tags")]
 fn tags(tags_data: &rocket::State<Arc<Mutex<TagsData>>>) -> Json<TagsData> {
     let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
@@ -90,9 +108,18 @@ fn tags(tags_data: &rocket::State<Arc<Mutex<TagsData>>>) -> Json<TagsData> {
 fn update_tags(
     tags_data: Json<TagsData>,
     shared_tags_data: &rocket::State<Arc<Mutex<TagsData>>>,
+    song_queue: &rocket::State<Arc<Mutex<SongQueue>>>,
+    mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>,
 ) -> Json<TagsData> {
+    let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MpdConn");
+    let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
+
     let mut locked_data = shared_tags_data.lock().expect("Failed to lock TagsData");
     *locked_data = tags_data.0.clone();
+
+    let songs = locked_data.get_allowed_songs(&mut locked_mpd_conn);
+    locked_song_queue.shuffle_and_add(songs);
+
     Json(locked_data.clone())
 }
 
@@ -188,9 +215,10 @@ fn rocket() -> _ {
 
     // build some accessors for our Scheduler...
     let song_queue_clone = Arc::clone(&song_queue);
+    let tags_data_clone = Arc::clone(&tags_data);
 
     // Spawn a detached asynchronous task to run the scheduler_mainbody function
-    thread::spawn(|| scheduler_mainbody(song_queue_clone));
+    thread::spawn(|| scheduler_mainbody(song_queue_clone, tags_data_clone));
 
     rocket::build()
         .manage(tags_data) // Pass TagsData as a rocket::State
@@ -198,6 +226,13 @@ fn rocket() -> _ {
         .manage(init_mpd_conn())
         .mount(
             "/",
-            routes![index, tags, update_tags, get_queue_length, shuffle_songs],
+            routes![
+                index,
+                tags,
+                update_tags,
+                get_queue_length,
+                shuffle_songs,
+                skip
+            ],
         )
 }

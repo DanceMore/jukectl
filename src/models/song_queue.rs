@@ -49,6 +49,7 @@ impl SongQueue {
         self.inner.iter().skip(len.saturating_sub(3)).collect()
     }
 
+    #[allow(dead_code)]
     pub fn shuffle(&mut self) {
         // Start the timer
         let start_time = std::time::Instant::now();

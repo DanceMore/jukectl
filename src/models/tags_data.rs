@@ -20,6 +20,7 @@ impl TagsData {
         // Process "any" tags
         for tag in &any_tags {
             if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
+                println!("[+] searching tag {} for songs to add", tag);
                 for song in playlist {
                     desired_songs.insert(HashableSong(song));
                 }
@@ -29,6 +30,7 @@ impl TagsData {
         // Process "not" tags
         for tag in &not_tags {
             if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
+                println!("[-] searching tag {} for songs to remove", tag);
                 for song in playlist {
                     desired_songs.remove(&HashableSong(song));
                 }
