@@ -12,13 +12,17 @@ pub struct TagsData {
 }
 
 // Implement the Debug trait for TagsData
-impl<> fmt::Debug for TagsData<> {
+impl fmt::Debug for TagsData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{\n    any: {:?},\n    not: {:?}\n}}", self.any, self.not)
+        write!(
+            f,
+            "{{\n    any: {:?},\n    not: {:?}\n}}",
+            self.any, self.not
+        )
     }
 }
 
-impl<> TagsData<> {
+impl TagsData {
     pub fn to_json(&self) -> String {
         match serde_json::to_string(self) {
             Ok(json) => json,

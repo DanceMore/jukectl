@@ -39,14 +39,18 @@ impl SongQueue {
     }
 
     // Get a slice of the first 3 songs in the queue
-    pub fn head(&self) -> Vec<&mpd::Song> {
-        self.inner.iter().take(3).collect()
+    pub fn head(&self) -> Vec<mpd::Song> {
+        self.inner.iter().take(3).cloned().collect()
     }
 
     // Get a slice of the last 3 songs in the queue
-    pub fn tail(&self) -> Vec<&mpd::Song> {
+    pub fn tail(&self) -> Vec<mpd::Song> {
         let len = self.inner.len();
-        self.inner.iter().skip(len.saturating_sub(3)).collect()
+        self.inner
+            .iter()
+            .skip(len.saturating_sub(3))
+            .cloned()
+            .collect()
     }
 
     #[allow(dead_code)]

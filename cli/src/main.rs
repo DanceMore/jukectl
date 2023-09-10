@@ -11,15 +11,15 @@ use colored::*;
 use dotenv::dotenv;
 
 #[allow(unused_imports)]
-use log::{error, warn, info, debug};
+use log::{debug, error, info, warn};
 use serde_json;
 
 mod banner;
 use crate::banner::print_banner;
 
 mod models;
-use crate::models::tags_data::TagsData;
 use crate::models::tags_data::parse_tags_data_from_argv;
+use crate::models::tags_data::TagsData;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,27 +46,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // command-line arg parsing :D
     let matches = App::new("jukectl")
         .about("command-line remote control for jukectl music player service")
+        .subcommand(App::new("status").about("Display current status of service"))
         .subcommand(
-            App::new("status")
-                .about("Display current status of service")
+            App::new("tag").about("Tag an item").arg(
+                Arg::with_name("TagName")
+                    .help("Name of the tag")
+                    .required(true),
+            ),
         )
         .subcommand(
-            App::new("tag")
-                .about("Tag an item")
-                .arg(
-                    Arg::with_name("TagName")
-                        .help("Name of the tag")
-                        .required(true),
-                ),
-        )
-        .subcommand(
-            App::new("untag")
-                .about("Untag an item")
-                .arg(
-                    Arg::with_name("TagName")
-                        .help("Name of the tag")
-                        .required(true),
-                ),
+            App::new("untag").about("Untag an item").arg(
+                Arg::with_name("TagName")
+                    .help("Name of the tag")
+                    .required(true),
+            ),
         )
         .subcommand(App::new("skip").about("Skip an item"))
         .subcommand(
@@ -85,29 +78,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .get_matches();
 
-
     // Handle subcommands
     match matches.subcommand() {
-        ("status", _) => {
-            match status(&api_hostname).await {
-                Ok(_) => debug!("[-] status() function completed successfully."),
-                Err(err) => eprintln!("[!] Error: {}", err),
-            }
-        }
-	("tag", Some(tag_matches)) => {
+        ("status", _) => match status(&api_hostname).await {
+            Ok(_) => debug!("[-] status() function completed successfully."),
+            Err(err) => eprintln!("[!] Error: {}", err),
+        },
+        ("tag", Some(tag_matches)) => {
             let add_tag = tag_matches.value_of("TagName").unwrap().to_string();
             tag(&api_hostname, add_tag).await?;
         }
-	("untag", Some(untag_matches)) => {
+        ("untag", Some(untag_matches)) => {
             let remove_tag = untag_matches.value_of("TagName").unwrap().to_string();
             untag(&api_hostname, remove_tag).await?;
         }
-        ("skip", Some(_)) => {
-            match skip_item(&api_hostname).await {
-                Ok(_) => debug!("[-] skip() function completed successfully."),
-                Err(err) => eprintln!("[!] Error: {}", err),
-            }
-        }
+        ("skip", Some(_)) => match skip_item(&api_hostname).await {
+            Ok(_) => debug!("[-] skip() function completed successfully."),
+            Err(err) => eprintln!("[!] Error: {}", err),
+        },
         ("playback", Some(playback_matches)) => {
             let tags = playback_matches.value_of("tags").unwrap_or("");
             let not_tags = playback_matches.value_of("not_tags").unwrap_or("");
@@ -184,7 +172,10 @@ async fn status(api_hostname: &str) -> Result<(), reqwest::Error> {
                 }
             }
         } else {
-            eprintln!("Error: Failed to fetch root (HTTP {})", root_response.status());
+            eprintln!(
+                "Error: Failed to fetch root (HTTP {})",
+                root_response.status()
+            );
         }
     } else {
         eprintln!("Error: Failed to fetch status (HTTP {})", response.status());
@@ -210,16 +201,16 @@ async fn skip_item(api_hostname: &str) -> Result<(), reqwest::Error> {
         match serde_json::from_str::<serde_json::Value>(&body) {
             Ok(json) => {
                 // Check if the "skipped" and "new" fields exist and are strings
-                if let (Some(skipped), Some(new)) = (
-                    json["skipped"].as_str(),
-                    json["new"].as_str(),
-                ) {
+                if let (Some(skipped), Some(new)) = (json["skipped"].as_str(), json["new"].as_str())
+                {
                     println!("{}", "[!] SKIPPING SONG".red().bold());
                     println!("    {}", skipped.red());
                     println!("{}", "now playing:".cyan().bold());
                     println!("    {}", new.green().bold());
                 } else {
-                    eprintln!("Error: Missing or invalid 'skipped' or 'new' fields in JSON response.");
+                    eprintln!(
+                        "Error: Missing or invalid 'skipped' or 'new' fields in JSON response."
+                    );
                 }
             }
             Err(e) => {
@@ -227,16 +218,16 @@ async fn skip_item(api_hostname: &str) -> Result<(), reqwest::Error> {
             }
         }
     } else {
-        eprintln!("[!] Error: Failed to skip item (HTTP {})", response.status());
+        eprintln!(
+            "[!] Error: Failed to skip item (HTTP {})",
+            response.status()
+        );
     }
 
     Ok(())
 }
 
-async fn playback(
-    api_hostname: &str,
-    tags_data: &TagsData<>,
-) -> Result<(), reqwest::Error> {
+async fn playback(api_hostname: &str, tags_data: &TagsData) -> Result<(), reqwest::Error> {
     println!("[-] TagsData: {:?}", tags_data);
 
     let client = reqwest::Client::new();
@@ -252,25 +243,22 @@ async fn playback(
     if response.status().is_success() {
         println!("[+] Playback Tags updated successfully.");
     } else {
-        eprintln!("[!] Error: Failed to update tags (HTTP {})", response.status());
+        eprintln!(
+            "[!] Error: Failed to update tags (HTTP {})",
+            response.status()
+        );
     }
 
     Ok(())
 }
 
-async fn tag(
-    api_hostname: &str,
-    add_tags: String,
-) -> Result<(), reqwest::Error> {
+async fn tag(api_hostname: &str, add_tags: String) -> Result<(), reqwest::Error> {
     debug!("[-] Tag Helper: passing thru to perform_tagging()");
     println!("{}{}", "[+] adding tag :".green(), add_tags.green().bold());
     perform_tagging(api_hostname, vec![add_tags], vec![]).await
 }
 
-async fn untag(
-    api_hostname: &str,
-    remove_tags: String,
-) -> Result<(), reqwest::Error> {
+async fn untag(api_hostname: &str, remove_tags: String) -> Result<(), reqwest::Error> {
     debug!("[-] UnTag Helper: passing thru to perform_tagging()");
     println!("{}{}", "[+] removing tag: ".red(), remove_tags.red().bold());
     perform_tagging(api_hostname, vec![], vec![remove_tags]).await
@@ -301,12 +289,23 @@ async fn perform_tagging(
             }
         }
     } else {
-        eprintln!("Error: Failed to fetch root (HTTP {})", root_response.status());
+        eprintln!(
+            "Error: Failed to fetch root (HTTP {})",
+            root_response.status()
+        );
         None
     };
 
     // gnarly line just to print, someone tell me why this is stupid and wrong
-    println!("    {}", now_playing.clone().expect("REASON").to_string().yellow().bold());
+    println!(
+        "    {}",
+        now_playing
+            .clone()
+            .expect("REASON")
+            .to_string()
+            .yellow()
+            .bold()
+    );
 
     // Create a JSON object representing the request body
     let request_body = serde_json::json!({
@@ -327,7 +326,10 @@ async fn perform_tagging(
     if response.status().is_success() {
         println!("{}", "[+] Tags updated successfully.".green());
     } else {
-        eprintln!("[!] Error: Failed to update tags (HTTP {})", response.status());
+        eprintln!(
+            "[!] Error: Failed to update tags (HTTP {})",
+            response.status()
+        );
     }
 
     Ok(())
