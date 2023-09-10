@@ -28,7 +28,11 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
 }
 
 // TODO: move out of main.rs
-fn scheduler_mainbody(mpd_conn: Arc<Mutex<MpdConn>>, song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mutex<TagsData>>) {
+fn scheduler_mainbody(
+    mpd_conn: Arc<Mutex<MpdConn>>,
+    song_queue: Arc<Mutex<SongQueue>>,
+    tags_data: Arc<Mutex<TagsData>>,
+) {
     loop {
         debug!("[-] scheduler firing");
         // get locks
@@ -300,7 +304,9 @@ fn update_song_tags(
 #[launch]
 fn rocket() -> _ {
     // share the MpdConn and SongQueue
-    let mpd_conn = Arc::new(Mutex::new( MpdConn::new().expect("Failed to create MPD connection") ));
+    let mpd_conn = Arc::new(Mutex::new(
+        MpdConn::new().expect("Failed to create MPD connection"),
+    ));
     let song_queue = Arc::new(Mutex::new(SongQueue::new()));
 
     // Shareable TagsData with default values
