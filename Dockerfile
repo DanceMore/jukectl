@@ -2,7 +2,7 @@
 FROM rust:1.72 as builder
 WORKDIR /app
 COPY . .
-RUN cargo build --release
+RUN cargo build --release --package jukectl-server
 
 ### stage 2
 # Create a new lightweight image with just the binary
@@ -12,7 +12,7 @@ FROM debian:bookworm-slim
 WORKDIR /app
 
 # Copy the binary from the builder stage to the final image
-COPY --from=builder /app/target/release/jukectl /app/jukectl
+COPY --from=builder /app/target/release/jukectl-server /app/jukectl-server
 
 ENV ROCKET_ADDRESS="0.0.0.0"
 
@@ -20,4 +20,4 @@ ENV ROCKET_ADDRESS="0.0.0.0"
 EXPOSE 8000
 
 # Command to run your Rocket application
-CMD ["/app/jukectl"]
+CMD ["/app/jukectl-server"]

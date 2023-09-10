@@ -1,0 +1,122 @@
+name: Create Release for CLI
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Install OpenSSL Development Packages
+      run: sudo apt-get update && sudo apt-get install -y libssl-dev
+
+    - name: Set release tag
+      id: set_tag
+      run: |
+        tag=$(git rev-parse --short=8 ${{ github.sha }})
+        echo "tag=${tag}" >> $GITHUB_ENV
+
+    - name: Build for Linux x86-64
+      run: |
+        rustup target add x86_64-unknown-linux-gnu
+        cargo build --package jukectl --release --target x86_64-unknown-linux-gnu
+        cp target/x86_64-unknown-linux-gnu/release/jukectl ./jukectl-linux-x86_64
+
+    - name: Generate Changelog
+      run: echo "# Release Notes" > changelog.txt  # Replace this with your actual changelog content
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          changelog.txt
+          jukectl-linux-x86_64
+        body_path: changelog.txt
+        tag_name: ${{ env.tag }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+  build-macos:
+    runs-on: macOS-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Set release tag
+      id: set_tag
+      run: |
+        tag=$(git rev-parse --short=8 ${{ github.sha }})
+        echo "tag=${tag}" >> $GITHUB_ENV
+
+    - name: Build for macOS
+      run: |
+        rustup target add x86_64-apple-darwin
+        cargo build --package jukectl --release --target x86_64-apple-darwin
+        cp target/x86_64-apple-darwin/release/jukectl ./jukectl-macos
+
+    - name: Generate Changelog
+      run: echo "# Release Notes" > changelog.txt  # Replace this with your actual changelog content
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          changelog.txt
+          jukectl-macos
+        body_path: changelog.txt
+        tag_name: ${{ env.tag }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable-msvc
+
+    - name: Set release tag
+      id: set_tag
+      shell: powershell
+      run: |
+        $tag = git rev-parse --short=8 $env:GITHUB_SHA
+        Set-Content -Path $env:GITHUB_ENV -Value "tag=$tag"
+
+    - name: Build for Windows x86-64
+      run: |
+        cargo build --package jukectl --release --target x86_64-pc-windows-msvc
+        ls target/x86_64-pc-windows-msvc/release/
+        cp target/x86_64-pc-windows-msvc/release/jukectl.exe ./jukectl-windows-x86_64.exe
+
+    - name: Generate Changelog
+      run: echo "# Release Notes" > changelog.txt  # Replace this with your actual changelog content
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          changelog.txt
+          jukectl-windows-x86_64.exe
+        body_path: changelog.txt
+        tag_name: ${{ env.tag }}
+        token: ${{ secrets.GITHUB_TOKEN }}
