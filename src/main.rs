@@ -6,11 +6,12 @@ use rocket::serde::json::Json;
 use rocket::tokio::time::{interval, Duration};
 use rocket::{Rocket, State};
 use serde::{Deserialize, Serialize};
-use std::env;
-use std::sync::{Arc, Mutex};
-use std::thread;
 
 use std::collections::HashSet;
+use std::env;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 mod models;
 use crate::models::hashable_song::HashableSong;
@@ -32,11 +33,9 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
     filename_array
 }
 
-use std::io::Write;
-
 fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>) {
     loop {
-        info!("[-] scheduler firing");
+        debug!("[-] scheduler firing");
 
         // Access song_queue by locking the mutex
         let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
@@ -132,70 +131,21 @@ fn shuffle_songs(
     let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
     let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MpdConn");
 
-    let tags = &locked_tags_data.any;
-
     // Get the desired songs
-    let songs = get_allowed_songs(&locked_tags_data, &mut locked_mpd_conn);
+    let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
 
     // Handle the case where there are no valid songs
     if songs.is_empty() {
         return Json("No valid songs to play. Bad human! No cookie!".to_string());
     }
 
-    // Add the shuffled songs to the queue
-    locked_song_queue.empty_queue();
-    for song in songs {
-        locked_song_queue.add(mpd::Song::from(song));
-    }
-    locked_song_queue.shuffle();
+    // Use a method on the SongQueue object to handle the shuffle and adding of songs
+    locked_song_queue.shuffle_and_add(songs);
 
     Json("Songs shuffled and added to the queue.".to_string())
 }
 
-fn extract_tags(tags_data: &TagsData) -> (HashSet<String>, HashSet<String>) {
-    let any_tags: HashSet<String> = tags_data
-        .any
-        .iter()
-        .flat_map(|s| s.split(',').map(String::from))
-        .collect();
-    let not_tags: HashSet<String> = tags_data
-        .not
-        .iter()
-        .flat_map(|s| s.split(',').map(String::from))
-        .collect();
-
-    (any_tags, not_tags)
-}
-
-fn get_allowed_songs(tags_data: &TagsData, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
-    let (any_tags, not_tags) = extract_tags(tags_data);
-
-    // Create a HashSet to store the desired songs
-    let mut desired_songs = HashSet::new();
-
-    // Process "any" tags
-    for tag in &any_tags {
-        if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
-            for song in playlist {
-                desired_songs.insert(HashableSong(song));
-            }
-        }
-    }
-
-    // Process "not" tags
-    for tag in &not_tags {
-        if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
-            for song in playlist {
-                desired_songs.remove(&HashableSong(song));
-            }
-        }
-    }
-
-    //println!("{:?}", desired_songs);
-
-    desired_songs
-}
-
+// the Arc/Mutex is here ....
 fn init_mpd_conn() -> Arc<Mutex<MpdConn>> {
     let mpd_conn = MpdConn::new().expect("Failed to create MPD connection");
     Arc::new(Mutex::new(mpd_conn))
@@ -203,13 +153,29 @@ fn init_mpd_conn() -> Arc<Mutex<MpdConn>> {
 
 #[launch]
 fn rocket() -> _ {
+    let mpd_conn = init_mpd_conn();
+
     // Shareable TagsData with default values
     let default_tags_data = TagsData {
         any: vec!["jukebox".to_string()],
         not: vec!["explicit".to_string()],
     };
     let tags_data = Arc::new(Mutex::new(default_tags_data));
+
     let song_queue = Arc::new(Mutex::new(SongQueue::new()));
+
+    // acquire locks for initial setup...
+    let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MpdConn");
+    let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
+    let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
+
+    // set up the jukebox SongQueue at boot...
+    let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
+    locked_song_queue.shuffle_and_add(songs);
+
+    drop(locked_mpd_conn);
+    drop(locked_song_queue);
+    drop(locked_tags_data);
 
     // build some accessors for our Scheduler...
     let song_queue_clone = Arc::clone(&song_queue);

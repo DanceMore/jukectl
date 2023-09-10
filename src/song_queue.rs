@@ -1,5 +1,8 @@
 use rand::seq::SliceRandom;
 use std::collections::VecDeque;
+use std::collections::HashSet;
+
+use crate::HashableSong;
 
 // Define your custom queue type
 pub struct SongQueue {
@@ -54,5 +57,14 @@ impl SongQueue {
 
     pub fn empty_queue(&mut self) {
         self.inner.clear();
+    }
+
+   // Shuffle the provided songs and add them to the queue
+    pub fn shuffle_and_add(&mut self, songs: HashSet<HashableSong>) {
+        self.empty_queue();
+        for song in songs {
+            self.add(mpd::Song::from(song));
+        }
+        self.shuffle();
     }
 }
