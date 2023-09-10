@@ -1,22 +1,7 @@
 # Use the official Rust image as the base image
 FROM rust:1.72 as builder
-
-# Set the working directory inside the container
 WORKDIR /app
-
-# Copy the Cargo.toml and Cargo.lock files to cache dependencies
-COPY Cargo.toml Cargo.lock ./
-
-# Create an empty project to cache dependencies
-RUN mkdir src && echo 'fn main() {}' > src/main.rs
-
-# Build the application to cache dependencies
-RUN cargo build --release
-
-# Copy the entire source code into the container
 COPY . .
-
-# Build the release version of the application
 RUN cargo build --release
 
 ### stage 2
