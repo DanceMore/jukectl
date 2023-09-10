@@ -29,11 +29,13 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
 
 // TODO: move out of main.rs
 fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mutex<TagsData>>) {
+    // make sure this is outside the loop to stop spamming connection attempts.
+    let mpd_conn = init_mpd_conn();
+
     loop {
         debug!("[-] scheduler firing");
 
         // get locks
-        let mpd_conn = init_mpd_conn();
         let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
         let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
         let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
@@ -74,12 +76,12 @@ fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mutex<Ta
         // release our locks
         drop(locked_mpd_conn);
         drop(locked_song_queue);
+        drop(locked_tags_data);
 
         // Sleep for a while
         thread::sleep(Duration::from_secs(3));
     }
 }
-
 
 //#[derive(Serialize)]
 //struct IndexResponse {
@@ -93,7 +95,10 @@ fn index(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<Vec<String>> {
     // Attempt to retrieve the song queue
     let song_array = match locked_mpd_conn.mpd.queue() {
         Ok(queue) => queue,
-        Err(_) => Vec::new(),
+        Err(error) => {
+            eprintln!("Error retrieving song queue: {}", error);
+            Vec::new()
+        }
     };
 
     let res = queue_to_filenames(song_array);
@@ -118,8 +123,14 @@ fn skip(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<SkipResponse> {
         .queue()
         .expect("Failed to get MPD queue");
 
-    let skipped_song = now_playing_queue.get(0).map(|song| song.file.clone()).unwrap_or_default();
-    let new_song = now_playing_queue.get(1).map(|song| song.file.clone()).unwrap_or_default();
+    let skipped_song = now_playing_queue
+        .get(0)
+        .map(|song| song.file.clone())
+        .unwrap_or_default();
+    let new_song = now_playing_queue
+        .get(1)
+        .map(|song| song.file.clone())
+        .unwrap_or_default();
 
     // Delete the first song (skip)
     // the API docs feel like I should be using mpd.next()
