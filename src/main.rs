@@ -183,12 +183,14 @@ fn update_tags(
     let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
     locked_song_queue.shuffle_and_add(songs);
 
+    let res = locked_tags_data.clone();
+
     // release our locks
     drop(locked_mpd_conn);
     drop(locked_song_queue);
     drop(locked_tags_data);
 
-    Json(locked_tags_data.clone())
+    Json(res)
 }
 
 #[derive(Serialize)]
