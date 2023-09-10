@@ -9,6 +9,8 @@ extern crate tokio;
 use clap::{App, Arg};
 use colored::*;
 use dotenv::dotenv;
+
+#[allow(unused_imports)]
 use log::{error, warn, info, debug};
 use serde::Deserialize;
 use serde::Serialize;
@@ -333,13 +335,7 @@ async fn perform_tagging(
 
         // Attempt to deserialize the JSON response into a Vec<String>
         match serde_json::from_str::<Vec<String>>(&root_body) {
-            Ok(strings) => {
-                if let Some(song) = strings.get(0) {
-                    Some(song.to_owned())
-                } else {
-                    None
-                }
-            }
+            Ok(strings) => strings.get(0).map(|song| song.to_owned()),
             Err(e) => {
                 eprintln!("Error: Failed to deserialize root response: {}", e);
                 None
