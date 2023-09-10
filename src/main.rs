@@ -65,11 +65,35 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
 }
 
 use std::io::Write;
+use std::path::PathBuf;
 
-fn scheduler_mainbody() {
+
+fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>) {
     loop {
+        // Access song_queue by locking the mutex
+        let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
+
+	let mpd_conn = init_mpd_conn();
+	let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
+
+        // Do something with the song_queue
+        println!("Queue length: {}", locked_song_queue.len());
+
+
+	// Assuming locked_song_queue.remove() returns an Option<mpd::Song>
+	if let Some(song) = locked_song_queue.remove() {
+		locked_mpd_conn.mpd.push(song);
+	} else {
+		// Handle the case when there are no more songs in the queue
+	}
+
+        // Release the lock when you're done with the data
+        drop(locked_song_queue);
+
         print!(".");
         let _ = std::io::stdout().flush();
+
+        // Sleep for a while
         thread::sleep(Duration::from_secs(3));
     }
 }
@@ -189,7 +213,6 @@ fn init_mpd_conn() -> Arc<Mutex<MpdConn>> {
     Arc::new(Mutex::new(mpd_conn))
 }
 
-
 #[launch]
 fn rocket() -> _ {
     // Shareable TagsData with default values
@@ -199,10 +222,12 @@ fn rocket() -> _ {
     };
     let tags_data = Arc::new(Mutex::new(default_tags_data));
     let song_queue = Arc::new(Mutex::new(SongQueue::new()));
-    let mpd_conn = Mutex::new(MpdConn::new());
+
+    // build some accessors for our Scheduler...
+    let song_queue_clone = Arc::clone(&song_queue);
 
     // Spawn a detached asynchronous task to run the scheduler_mainbody function
-    thread::spawn(|| scheduler_mainbody());
+    thread::spawn(|| scheduler_mainbody(song_queue_clone));
 
     rocket::build()
         .manage(tags_data) // Pass TagsData as a state
