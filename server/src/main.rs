@@ -392,8 +392,21 @@ fn update_song_tags(
     Json("Tags updated successfully".to_string())
 }
 
+use tracing::{info, Level};
+use tracing_subscriber::FmtSubscriber;
+
 #[launch]
 fn rocket() -> _ {
+    // a builder for `FmtSubscriber`.
+    let subscriber = FmtSubscriber::builder()
+        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
+        // will be written to stdout.
+        .with_max_level(Level::TRACE)
+        // completes the builder.
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+
     // share the MpdConn and SongQueue
     let mpd_conn = Arc::new(Mutex::new(
         MpdConn::new().expect("Failed to create MPD connection"),
