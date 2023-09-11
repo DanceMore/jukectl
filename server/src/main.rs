@@ -15,7 +15,7 @@ use crate::models::song_queue::SongQueue;
 use crate::models::tags_data::TagsData;
 
 mod scheduler;
-use crate::scheduler::scheduler::scheduler_mainbody;
+use crate::scheduler::scheduler_mainbody;
 
 mod mpd_conn;
 use crate::mpd_conn::MpdConn;
