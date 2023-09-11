@@ -70,7 +70,7 @@ fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mutex<Ta
                 if let Err(error) = locked_mpd_conn.mpd.push(song.clone()) {
                     // Handle the error here or propagate it up to the caller
                     // In this example, we're printing the error and continuing
-                    eprintln!("Error pushing song to MPD: {}", error);
+                    eprintln!("[!] Error pushing song to MPD: {}", error);
                 } else {
                     info!("[+] scheduler adding song {}", song.file);
                     let _ = locked_mpd_conn.mpd.play();
@@ -103,7 +103,7 @@ fn index(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<Vec<String>> {
     let song_array = match locked_mpd_conn.mpd.queue() {
         Ok(queue) => queue,
         Err(error) => {
-            eprintln!("Error retrieving song queue: {}", error);
+            eprintln!("[!] Error retrieving song queue: {}", error);
             Vec::new()
         }
     };
@@ -330,10 +330,10 @@ fn update_song_tags(
 
     if let Some(song) = first_song {
         for tag in add_tags {
-            println!("[!] Add song to tag {}", tag);
+            println!("[+] Add song to tag {}", tag);
             // Add the song to the playlist with the specified tag
             if let Err(error) = locked_mpd_conn.mpd.pl_push(tag, song.clone()) {
-                eprintln!("Error adding song to tag playlist: {}", error);
+                eprintln!("[!] Error adding song to tag playlist: {}", error);
             }
         }
 
@@ -342,21 +342,27 @@ fn update_song_tags(
         for tag in remove_tags {
             println!("[!] Remove song from tag {}", tag);
 
+            let fetch_timer = std::time::Instant::now();
             // Find the song's position(s) in the playlist with the specified tag
             let playlist = match locked_mpd_conn.mpd.playlist(tag) {
                 Ok(playlist) => playlist,
                 Err(err) => {
-                    eprintln!("Error getting playlist: {}", err);
+                    eprintln!("[!] Error getting playlist: {}", err);
                     continue;
                 }
             };
+            let fetch_timer_elapsed = fetch_timer.elapsed();
+            println!("[-] network fetch took: {:?}", fetch_timer_elapsed);
 
+            let delete_timer = std::time::Instant::now();
             let positions_to_delete: Vec<_> = playlist
                 .iter()
                 .enumerate()
                 .filter(|(_, song_to_remove)| song_to_remove.file == song.file)
                 .map(|(position, _)| position as u32)
                 .collect();
+            let delete_timer_elapsed = delete_timer.elapsed();
+            println!("[-] innermost walk took: {:?}", delete_timer_elapsed);
 
             // Delete the songs at the found positions
             for position in positions_to_delete.iter() {
