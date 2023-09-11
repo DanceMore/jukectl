@@ -348,7 +348,7 @@ async fn playback(api_hostname: &str, tags_data: &TagsData) -> Result<(), reqwes
 
 async fn tag(api_hostname: &str, add_tags: String) -> Result<(), reqwest::Error> {
     debug!("[-] Tag Helper: passing thru to perform_tagging()");
-    println!("{}{}", "[+] adding tag :".green(), add_tags.green().bold());
+    println!("{} {}", "[+] adding tag:".green(), add_tags.green().bold());
     perform_tagging(api_hostname, vec![add_tags], vec![]).await
 }
 
