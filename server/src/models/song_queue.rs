@@ -38,17 +38,19 @@ impl SongQueue {
         self.inner.len()
     }
 
-    // Get a slice of the first 3 songs in the queue
-    pub fn head(&self) -> Vec<mpd::Song> {
-        self.inner.iter().take(3).cloned().collect()
+    // Get a slice of the first n songs in the queue, defaulting to 3 if count is None
+    pub fn head(&self, count: Option<usize>) -> Vec<mpd::Song> {
+        let count = count.unwrap_or(3);
+        self.inner.iter().take(count).cloned().collect()
     }
 
-    // Get a slice of the last 3 songs in the queue
-    pub fn tail(&self) -> Vec<mpd::Song> {
+    // Get a slice of the last n songs in the queue, defaulting to 3 if count is None
+    pub fn tail(&self, count: Option<usize>) -> Vec<mpd::Song> {
         let len = self.inner.len();
+        let count = count.unwrap_or(3);
         self.inner
             .iter()
-            .skip(len.saturating_sub(3))
+            .skip(len.saturating_sub(count))
             .cloned()
             .collect()
     }
@@ -83,10 +85,7 @@ impl SongQueue {
         self.empty_queue();
 
         // Convert HashSet to Vec for shuffling
-        let mut song_vec: Vec<mpd::Song> = songs
-            .into_iter()
-            .map(mpd::Song::from)
-            .collect();
+        let mut song_vec: Vec<mpd::Song> = songs.into_iter().map(mpd::Song::from).collect();
         let mut rng = rand::thread_rng();
         song_vec.shuffle(&mut rng);
 

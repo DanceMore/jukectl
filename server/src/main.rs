@@ -210,19 +210,26 @@ struct QueueResponse {
     tail: Vec<String>,
 }
 
-#[get("/queue")]
-fn get_queue_length(song_queue: &rocket::State<Arc<Mutex<SongQueue>>>) -> Json<QueueResponse> {
+// Your existing route handler for /queue.
+#[get("/queue?<count>")]
+fn get_queue(
+    song_queue: &rocket::State<Arc<Mutex<SongQueue>>>,
+    count: Option<usize>,
+) -> Json<QueueResponse> {
+    // Extract the count value from the Option<Form<usize>> parameter
+    let count_value = count.unwrap_or(3); // Use a default value of 3 if count is None
+
     let locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
     let length = locked_song_queue.len(); // Get the length of the queue
 
     // TODO: I kinda hate this presentation layer formatting, but it compiles...
     let head = locked_song_queue
-        .head()
+        .head(Some(count_value))
         .iter()
         .map(|song| song.file.clone())
         .collect::<Vec<_>>();
     let tail = locked_song_queue
-        .tail()
+        .tail(Some(count_value))
         .iter()
         .map(|song| song.file.clone())
         .collect::<Vec<_>>();
@@ -269,13 +276,13 @@ fn shuffle_songs(
     }
 
     // Capture the old songs before shuffling
-    let old_songs = (*locked_song_queue).head().clone();
+    let old_songs = (*locked_song_queue).head(None).clone();
 
     // Use a method on the SongQueue object to handle the shuffle and adding of songs
     locked_song_queue.shuffle_and_add(songs);
 
     // Capture the new songs after shuffling
-    let new_songs = (*locked_song_queue).head().clone();
+    let new_songs = (*locked_song_queue).head(None).clone();
 
     let response = ShuffleResponse {
         old: queue_to_filenames(old_songs),
@@ -397,7 +404,7 @@ fn rocket() -> _ {
                 index,
                 tags,
                 update_tags,
-                get_queue_length,
+                get_queue,
                 shuffle_songs,
                 skip,
                 update_song_tags
