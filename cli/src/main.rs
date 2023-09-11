@@ -6,6 +6,8 @@ extern crate reqwest;
 extern crate serde;
 extern crate tokio;
 
+use serde::Deserialize;
+
 use colored::*;
 use dotenv::dotenv;
 
@@ -19,7 +21,7 @@ mod models;
 use crate::models::tags_data::parse_tags_data_from_argv;
 use crate::models::tags_data::TagsData;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -33,14 +35,16 @@ struct Cli {
 enum Commands {
     /// Display current status of service
     Status,
-    /// Tag an item
+    /// Tag the currently playing song
     Tag(TagArgs),
-    /// Untag an item
+    /// Untag the currently playing song
     Untag(UntagArgs),
-    /// Skip an item
+    /// Skip the currently playing song
     Skip,
-    /// Playback with tags
+    /// Adjust the jukebox NowPlaying tags
     Playback(PlaybackArgs),
+    /// Query the jukebox queue directly
+    Queue(QueueArgs),
 }
 
 #[derive(Parser)]
@@ -64,6 +68,26 @@ struct PlaybackArgs {
     tags: String,
     #[clap(help = "Tags to exclude from playback")]
     not_tags: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct QueueArgs {
+    #[command(subcommand)]
+    command: QueueSubcommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum QueueSubcommand {
+    /// Peek at COUNT from the front of the queue
+    Head(QueueHeadArgs),
+    /// Peek at COUNT from the end of the queue
+    Tail(QueueHeadArgs),
+}
+
+#[derive(Parser, Debug)]
+struct QueueHeadArgs {
+    #[clap(help = "Integer argument for head command")]
+    count: i32,
 }
 
 #[tokio::main]
@@ -125,6 +149,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match playback(&api_hostname, &tags_data).await {
                 Ok(_) => debug!("Playback started with tags: {:?}", tags_data),
                 Err(err) => eprintln!("[!] Error: {}", err),
+            }
+        }
+
+        Commands::Queue(args) => {
+            match args.command {
+                QueueSubcommand::Head(args) => {
+                    // Handle queue head command with head_args
+                    println!("Queue head command with count: {:?}", args.count);
+                }
+                QueueSubcommand::Tail(args) => {
+                    // Handle queue tail command with tail_args
+                    println!("Queue tail command with count: {:?}", args.count);
+                }
             }
         }
     }
