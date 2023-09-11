@@ -67,7 +67,7 @@ impl SongQueue {
 
         // Stop the timer
         let elapsed_time = start_time.elapsed();
-        println!("shuffle took: {:?}", elapsed_time);
+        println!("[-] shuffle took: {:?}", elapsed_time);
     }
 
     pub fn empty_queue(&mut self) {
@@ -95,6 +95,6 @@ impl SongQueue {
 
         // Stop the timer
         let elapsed_time = start_time.elapsed();
-        println!("shuffle_and_add took: {:?}", elapsed_time);
+        println!("[-] shuffle_and_add took: {:?}", elapsed_time);
     }
 }
