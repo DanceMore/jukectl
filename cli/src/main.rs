@@ -152,62 +152,122 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Queue(args) => {
-            match args.command {
-                QueueSubcommand::Head(args) => {
-                    // Handle queue head command with head_args
-                    println!("Queue head command with count: {:?}", args.count);
-                }
-                QueueSubcommand::Tail(args) => {
-                    // Handle queue tail command with tail_args
-                    println!("Queue tail command with count: {:?}", args.count);
+        Commands::Queue(args) => match args.command {
+            QueueSubcommand::Head(args) => {
+                print_banner();
+                debug!("Queue head command with count: {:?}", args.count);
+                let queue_data = queue_by_count(&api_hostname, args.count.try_into().unwrap())
+                    .await
+                    .unwrap_or_default();
+
+                println!(
+                    "{}{}",
+                    "queue length: ".green(),
+                    queue_data.length.to_string().green().bold()
+                );
+
+                for (index, song) in queue_data.head.iter().enumerate() {
+                    let color = if index % 2 == 0 { "cyan" } else { "magenta" };
+
+                    println!("  {}", song.to_string().color(color));
                 }
             }
-        }
+            QueueSubcommand::Tail(args) => {
+                print_banner();
+                debug!("Queue tail command with count: {:?}", args.count);
+                let queue_data = queue_by_count(&api_hostname, args.count.try_into().unwrap())
+                    .await
+                    .unwrap_or_default();
+
+                println!(
+                    "{}{}",
+                    "queue length: ".green(),
+                    queue_data.length.to_string().green().bold()
+                );
+
+                for (index, song) in queue_data.tail.iter().enumerate() {
+                    let color = if index % 2 == 0 { "cyan" } else { "magenta" };
+
+                    println!("  {}", song.to_string().color(color));
+                }
+            }
+        },
     }
 
     Ok(())
 }
 
-#[derive(Debug, Deserialize)]
+async fn queue_by_count(api_hostname: &str, count: usize) -> Result<QueueResponse, reqwest::Error> {
+    // Fetch queue status with a count
+    let queue_data = get_queue(api_hostname, Some(count))
+        .await
+        .unwrap_or_default();
+
+    Ok(queue_data)
+}
+
+#[derive(Debug, Deserialize, Default)]
 struct QueueResponse {
     length: usize,
     head: Vec<String>,
     tail: Vec<String>,
 }
 
-async fn status(api_hostname: &str) -> Result<(), reqwest::Error> {
-    print_banner();
-
+async fn get_queue(api_hostname: &str, count: Option<usize>) -> Option<QueueResponse> {
     let client = reqwest::Client::new();
 
-    // Make a third GET request to /queue
-    let url_queue = format!("{}/queue", api_hostname);
-    let response_queue = client.get(&url_queue).send().await?;
+    // Construct the URL with the count parameter
+    let url = match count {
+        Some(c) => format!("{}/queue?count={}", api_hostname, c),
+        None => format!("{}/queue", api_hostname),
+    };
 
-    if response_queue.status().is_success() {
-        let body_queue = response_queue.text().await?;
+    let response = client.get(&url).send().await.ok()?;
+    if response.status().is_success() {
+        let body_queue = response.text().await.ok()?;
         debug!("[?] raw queue response body: {}", body_queue);
 
         // Attempt to deserialize the JSON response into QueueResponse
         match serde_json::from_str::<QueueResponse>(&body_queue) {
-            Ok(queue_data) => {
-                println!(
-                    "                          {}{}",
-                    "queue length: ".cyan(),
-                    queue_data.length.to_string().cyan().bold()
-                );
-            }
+            Ok(queue_data) => Some(queue_data),
             Err(e) => {
                 eprintln!("Error: Failed to deserialize queue response: {}", e);
+                Some(QueueResponse {
+                    length: 0,
+                    head: Vec::new(),
+                    tail: Vec::new(),
+                })
             }
         }
     } else {
         eprintln!(
             "Error: Failed to fetch queue status (HTTP {})",
-            response_queue.status()
+            response.status()
         );
+        Some(QueueResponse {
+            length: 0,
+            head: Vec::new(),
+            tail: Vec::new(),
+        })
     }
+}
+
+async fn status(api_hostname: &str) -> Result<(), reqwest::Error> {
+    print_banner();
+
+    // Fetch queue status with a count of 3
+    match get_queue(api_hostname, Some(3)).await {
+        Some(queue_data) => {
+            println!(
+                "                          {}{}",
+                "queue length: ".cyan(),
+                queue_data.length.to_string().cyan().bold()
+            );
+        }
+        None => todo!(),
+    }
+
+    let client = reqwest::Client::new();
 
     // Make the first GET request to /tags
     let url_tags = format!("{}/tags", api_hostname);
