@@ -1,6 +1,6 @@
 # jukectl
 
-the Rust edition of a lean utility that uses `mpd` as the Database and Player to be your own private jukebox 🔊🚀
+the Rust edition of a lean, UNIX philosophy(ish) utility that uses `mpd` as the Database and Player to be your own private jukebox 🔊🚀
 
 a "Tag" is nothing more than a Key/Value store and a Playlist is nothing more than a Key (Playlist Name) and a set of Values (Files).
 
@@ -67,6 +67,8 @@ in my quest to port everything to Rust, I've finally re-written `jukectl` one mo
 * Rust + Rocket
 * * nearly identical API and responses as `ruby-jukectl`
 * * opportunities to extend / improve / de-cruft in a Modern language
+
+even earlier, I was inspired by https://github.com/agius/HackerMusic as well as moving from a spinning-disk iPod to a SmartPhone and needing to stream my music library on the go...
 
 
 
