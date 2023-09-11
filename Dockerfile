@@ -15,6 +15,7 @@ WORKDIR /app
 COPY --from=builder /app/target/release/jukectl-server /app/jukectl-server
 
 ENV ROCKET_ADDRESS="0.0.0.0"
+ENV ROCKET_PROFILE="production"
 
 # Expose the port your Rocket server will listen on (change to your port)
 EXPOSE 8000
