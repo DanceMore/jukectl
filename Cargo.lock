@@ -969,8 +969,6 @@ dependencies = [
  "rocket",
  "serde",
  "serde_json",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
