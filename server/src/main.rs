@@ -332,44 +332,48 @@ fn update_song_tags(
         }
 
         // Start the timer
-        let start_time = std::time::Instant::now();
+        let remove_tags_timer = std::time::Instant::now();
         for tag in remove_tags {
             println!("[!] Remove song from tag {}", tag);
 
             // Find the song's position(s) in the playlist with the specified tag
-            let playlist = locked_mpd_conn.mpd.playlist(tag);
-            if let Ok(playlist) = playlist {
-                let mut positions_to_delete = Vec::new();
-                for (position, song_to_remove) in playlist.iter().enumerate() {
-                    if song_to_remove.file == song.file {
-                        positions_to_delete.push(position as u32);
-                    }
+            let playlist = match locked_mpd_conn.mpd.playlist(tag) {
+                Ok(playlist) => playlist,
+                Err(err) => {
+                    eprintln!("Error getting playlist: {}", err);
+                    continue;
                 }
+            };
 
-                // Delete the songs at the found positions
-                for position in positions_to_delete.iter().rev() {
-                    if let Err(error) = locked_mpd_conn.mpd.pl_delete(tag, *position) {
-                        eprintln!("Error removing song from tag playlist: {}", error);
-                    }
-                }
+            let positions_to_delete: Vec<_> = playlist
+                .iter()
+                .enumerate()
+                .filter(|(_, song_to_remove)| song_to_remove.file == song.file)
+                .map(|(position, _)| position as u32)
+                .collect();
 
-                // Print how many times the song was removed
-                if positions_to_delete.is_empty() {
-                    println!("Song not found in the playlist with tag {}", tag);
-                } else {
-                    println!(
-                        "Song removed {} times from the playlist with tag {}",
-                        positions_to_delete.len(),
-                        tag
-                    );
+            // Delete the songs at the found positions
+            for position in positions_to_delete.iter() {
+                if let Err(error) = locked_mpd_conn.mpd.pl_delete(tag, *position) {
+                    eprintln!("Error removing song from tag playlist: {}", error);
                 }
+            }
+
+            // Print how many times the song was removed
+            if positions_to_delete.is_empty() {
+                println!("Song not found in the playlist with tag {}", tag);
             } else {
-                eprintln!("Error getting playlist: {}", playlist.err().unwrap());
+                println!(
+                    "Song removed {} times from the playlist with tag {}",
+                    positions_to_delete.len(),
+                    tag
+                );
             }
         }
+        drop(locked_mpd_conn);
 
         // Stop the timer
-        let elapsed_time = start_time.elapsed();
+        let elapsed_time = remove_tags_timer.elapsed();
         println!("remove_tags walks took: {:?}", elapsed_time);
     }
 
