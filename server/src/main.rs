@@ -331,27 +331,46 @@ fn update_song_tags(
             }
         }
 
+        // Start the timer
+        let start_time = std::time::Instant::now();
         for tag in remove_tags {
             println!("[!] Remove song from tag {}", tag);
 
-            // Find the song's position in the playlist with the specified tag
+            // Find the song's position(s) in the playlist with the specified tag
             let playlist = locked_mpd_conn.mpd.playlist(tag);
             if let Ok(playlist) = playlist {
-                if let Some(position) = playlist
-                    .iter()
-                    .position(|song_to_remove| song_to_remove.file == song.file)
-                {
-                    // Delete the song at the found position
-                    if let Err(error) = locked_mpd_conn.mpd.pl_delete(tag, position as u32) {
+                let mut positions_to_delete = Vec::new();
+                for (position, song_to_remove) in playlist.iter().enumerate() {
+                    if song_to_remove.file == song.file {
+                        positions_to_delete.push(position as u32);
+                    }
+                }
+
+                // Delete the songs at the found positions
+                for position in positions_to_delete.iter().rev() {
+                    if let Err(error) = locked_mpd_conn.mpd.pl_delete(tag, *position) {
                         eprintln!("Error removing song from tag playlist: {}", error);
                     }
-                } else {
+                }
+
+                // Print how many times the song was removed
+                if positions_to_delete.is_empty() {
                     println!("Song not found in the playlist with tag {}", tag);
+                } else {
+                    println!(
+                        "Song removed {} times from the playlist with tag {}",
+                        positions_to_delete.len(),
+                        tag
+                    );
                 }
             } else {
                 eprintln!("Error getting playlist: {}", playlist.err().unwrap());
             }
         }
+
+        // Stop the timer
+        let elapsed_time = start_time.elapsed();
+        println!("remove_tags walks took: {:?}", elapsed_time);
     }
 
     Json("Tags updated successfully".to_string())
