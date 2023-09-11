@@ -169,20 +169,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[derive(Debug, Deserialize)]
+struct QueueResponse {
+    length: usize,
+    head: Vec<String>,
+    tail: Vec<String>,
+}
+
 async fn status(api_hostname: &str) -> Result<(), reqwest::Error> {
     print_banner();
 
     let client = reqwest::Client::new();
-    let url = format!("{}/tags", api_hostname);
 
-    let response = client.get(&url).send().await?;
+    // Make a third GET request to /queue
+    let url_queue = format!("{}/queue", api_hostname);
+    let response_queue = client.get(&url_queue).send().await?;
 
-    if response.status().is_success() {
-        let body = response.text().await?;
-        debug!("[?] raw response body: {}", body);
+    if response_queue.status().is_success() {
+        let body_queue = response_queue.text().await?;
+        debug!("[?] raw queue response body: {}", body_queue);
+
+        // Attempt to deserialize the JSON response into QueueResponse
+        match serde_json::from_str::<QueueResponse>(&body_queue) {
+            Ok(queue_data) => {
+                println!(
+                    "                          {}{}",
+                    "queue length: ".cyan(),
+                    queue_data.length.to_string().cyan().bold()
+                );
+            }
+            Err(e) => {
+                eprintln!("Error: Failed to deserialize queue response: {}", e);
+            }
+        }
+    } else {
+        eprintln!(
+            "Error: Failed to fetch queue status (HTTP {})",
+            response_queue.status()
+        );
+    }
+
+    // Make the first GET request to /tags
+    let url_tags = format!("{}/tags", api_hostname);
+    let response_tags = client.get(&url_tags).send().await?;
+
+    if response_tags.status().is_success() {
+        let body_tags = response_tags.text().await?;
+        debug!("[?] raw response body: {}", body_tags);
 
         // Attempt to deserialize the JSON response into TagsData
-        match serde_json::from_str::<TagsData>(&body) {
+        match serde_json::from_str::<TagsData>(&body_tags) {
             Ok(tags_data) => {
                 println!("{}", "current playback tags:".cyan().bold());
                 println!("    {}: {:?}", "any".green().bold(), tags_data.any);
@@ -192,50 +228,52 @@ async fn status(api_hostname: &str) -> Result<(), reqwest::Error> {
                 eprintln!("Error: Failed to deserialize response: {}", e);
             }
         }
+    } else {
+        eprintln!(
+            "Error: Failed to fetch status (HTTP {})",
+            response_tags.status()
+        );
+        return Ok(());
+    }
 
-        // Make an additional GET request to the root URL
-        let root_url = format!("{}/", api_hostname);
-        let root_response = client.get(&root_url).send().await?;
+    // Make an additional GET request to the root URL
+    let url_root = format!("{}/", api_hostname);
+    let response_root = client.get(&url_root).send().await?;
 
-        if root_response.status().is_success() {
-            let root_body = root_response.text().await?;
-            debug!("[?] raw root response body: {}", root_body);
+    if response_root.status().is_success() {
+        let body_root = response_root.text().await?;
+        debug!("[?] raw root response body: {}", body_root);
 
-            // Attempt to deserialize the JSON response into a Vec<String>
-            match serde_json::from_str::<Vec<String>>(&root_body) {
-                Ok(strings) => {
-                    println!("{}", "now playing:".green().bold());
+        // Attempt to deserialize the JSON response into a Vec<String>
+        match serde_json::from_str::<Vec<String>>(&body_root) {
+            Ok(strings) => {
+                println!("{}", "now playing:".green().bold());
 
-                    match strings.len() {
-                        0 => {
-                            println!("  {}", "no songs in the queue.".red().bold());
-                        }
-                        1 => {
-                            println!("    {}", strings[0].yellow().bold());
-                        }
-                        // because Rust will make us handle the case when there are more than 2 elements
-                        // and because we are truncating and only printing two, those cases can collpase
-                        // into one instead of `2 => {}; _ => {};`
-                        _ => {
-                            println!("    {}", strings[0].yellow().bold());
-                            println!("{}", "up next:".red().bold());
-                            println!("    {}", strings[1].magenta().bold());
-                        }
+                match strings.len() {
+                    0 => {
+                        println!("  {}", "no songs in the queue.".red().bold());
+                    }
+                    1 => {
+                        println!("    {}", strings[0].yellow().bold());
+                    }
+                    _ => {
+                        println!("    {}", strings[0].yellow().bold());
+                        println!("{}", "up next:".red().bold());
+                        println!("    {}", strings[1].magenta().bold());
                     }
                 }
-                Err(e) => {
-                    eprintln!("Error: Failed to deserialize root response: {}", e);
-                }
             }
-        } else {
-            eprintln!(
-                "Error: Failed to fetch root (HTTP {})",
-                root_response.status()
-            );
+            Err(e) => {
+                eprintln!("Error: Failed to deserialize root response: {}", e);
+            }
         }
     } else {
-        eprintln!("Error: Failed to fetch status (HTTP {})", response.status());
+        eprintln!(
+            "Error: Failed to fetch root (HTTP {})",
+            response_root.status()
+        );
     }
+
     Ok(())
 }
 
