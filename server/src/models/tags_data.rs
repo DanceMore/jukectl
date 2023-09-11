@@ -21,8 +21,8 @@ impl TagsData {
         for tag in &any_tags {
             let start_time1 = std::time::Instant::now();
             if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
-		let elapsed_time1 = start_time1.elapsed();
-		println!("[-] fetching playlist took: {:?}", elapsed_time1);
+                let elapsed_time1 = start_time1.elapsed();
+                println!("[-] fetching playlist took: {:?}", elapsed_time1);
                 println!("[+] searching tag {} for songs to add", tag);
                 for song in playlist {
                     desired_songs.insert(HashableSong(song));
@@ -34,8 +34,8 @@ impl TagsData {
         for tag in &not_tags {
             let start_time2 = std::time::Instant::now();
             if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
-		let elapsed_time2 = start_time2.elapsed();
-		println!("[-] fetching playlist took: {:?}", elapsed_time2);
+                let elapsed_time2 = start_time2.elapsed();
+                println!("[-] fetching playlist took: {:?}", elapsed_time2);
                 println!("[-] searching tag {} for songs to remove", tag);
                 for song in playlist {
                     desired_songs.remove(&HashableSong(song));
