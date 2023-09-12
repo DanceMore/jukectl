@@ -18,18 +18,16 @@ use crate::models::tags_data::TagsData;
 mod mpd_conn;
 use crate::mpd_conn::MpdConn;
 
-pub fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mutex<TagsData>>) {
-    // Create a new MpdConn instance for the scheduler
-    let mpd_conn = Arc::new(Mutex::new(
-        MpdConn::new().expect("Failed to create MPD connection"),
-    ));
-
+// TODO: move out of main.rs
+fn scheduler_mainbody(
+    mpd_conn: Arc<Mutex<MpdConn>>,
+    song_queue: Arc<Mutex<SongQueue>>,
+    tags_data: Arc<Mutex<TagsData>>,
+) {
     loop {
         debug!("[-] scheduler firing");
-        // lock the local connector, should not matter
+        // get locks
         let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
-
-        // shared data, these locks matter
         let mut locked_song_queue = song_queue.lock().expect("Failed to lock SongQueue");
         let locked_tags_data = tags_data.lock().expect("Failed to lock TagsData");
 
@@ -41,10 +39,6 @@ pub fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mute
             locked_song_queue.shuffle_and_add(songs);
         }
 
-        // aggressively release locks
-        drop(locked_song_queue);
-        drop(locked_tags_data);
-
         // only do work if the live MPD queue length is less than 2
         // ie: 1 Song now-playing, 1 Song on-deck
         let now_playing_len = locked_mpd_conn
@@ -53,9 +47,8 @@ pub fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mute
             .expect("Failed getting MPD active-queue")
             .len();
 
-        let mut locked_song_queue2 = song_queue.lock().expect("Failed to lock SongQueue");
         if now_playing_len < 2 {
-            if let Some(song) = locked_song_queue2.remove() {
+            if let Some(song) = locked_song_queue.remove() {
                 if let Err(error) = locked_mpd_conn.mpd.push(song.clone()) {
                     // Handle the error here or propagate it up to the caller
                     // In this example, we're printing the error and continuing
@@ -71,8 +64,10 @@ pub fn scheduler_mainbody(song_queue: Arc<Mutex<SongQueue>>, tags_data: Arc<Mute
             let _ = std::io::stdout().flush();
         }
 
-        // release locks
-        drop(locked_song_queue2);
+        // release our locks
+        drop(locked_mpd_conn);
+        drop(locked_song_queue);
+        drop(locked_tags_data);
 
         // Sleep for a while
         thread::sleep(Duration::from_secs(3));
