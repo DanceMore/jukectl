@@ -8,7 +8,11 @@ pub struct MpdConn {
 impl MpdConn {
     pub fn new() -> Result<Self> {
         println!("[!] connecting to mpd...");
+        let mpd = MpdConn::connect_mpd()?;
+        Ok(MpdConn { mpd })
+    }
 
+    fn connect_mpd() -> Result<Client> {
         // Get environment variables for MPD configuration
         let host = env::var("MPD_HOST").unwrap_or_else(|_| "localhost".to_string());
         let port: u16 = env::var("MPD_PORT")
@@ -29,6 +33,12 @@ impl MpdConn {
         // always set to "consume" as part of Jukectl
         mpd.consume(true)?;
 
-        Ok(MpdConn { mpd })
+        Ok(mpd)
+    }
+
+    pub fn reconnect(&mut self) -> Result<()> {
+        println!("[!] Reconnecting to mpd...");
+        self.mpd = MpdConn::connect_mpd()?;
+        Ok(())
     }
 }

@@ -6,8 +6,8 @@ use rocket::tokio::time::Duration;
 use serde::Deserialize;
 use serde::Serialize;
 
-use std::sync::{Arc, Mutex};
 use std::io::Write;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 mod models;
@@ -98,11 +98,18 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
 fn index(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<Vec<String>> {
     let mut locked_mpd_conn = mpd_conn.lock().expect("Failed to lock MPD connection");
 
+    println!("[-] inside index method");
     // Attempt to retrieve the song queue
     let song_array = match locked_mpd_conn.mpd.queue() {
         Ok(queue) => queue,
         Err(error) => {
-            eprintln!("[!] Error retrieving song queue: {}", error);
+            eprintln!(
+                "[!] Error retrieving song queue, triggering reconnect?: {}",
+                error
+            );
+            if let Err(reconnect_error) = locked_mpd_conn.reconnect() {
+                eprintln!("[!] Error reconnecting to MPD: {}", reconnect_error);
+            }
             Vec::new()
         }
     };
