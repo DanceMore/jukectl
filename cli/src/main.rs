@@ -1,6 +1,5 @@
 extern crate clap;
 extern crate colored;
-extern crate dotenv;
 extern crate log;
 extern crate reqwest;
 extern crate serde;
@@ -9,7 +8,6 @@ extern crate tokio;
 use serde::Deserialize;
 
 use colored::*;
-use dotenv::dotenv;
 
 #[allow(unused_imports)]
 use log::{debug, error, info, warn};
@@ -94,9 +92,6 @@ struct QueueHeadArgs {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize the logger
     env_logger::init();
-
-    // Load environment variables from .env file
-    dotenv().ok();
 
     // make compiler warning quiet; it should be getting set or exiting.
     #[allow(unused_assignments)]
