@@ -250,8 +250,8 @@ async fn get_queue(api_hostname: &str, count: Option<usize>) -> Option<QueueResp
 async fn status(api_hostname: &str) -> Result<(), reqwest::Error> {
     print_banner();
 
-    // Fetch queue status with default args (should equal 3)
-    match get_queue(api_hostname, None).await {
+    // Fetch queue status with a count of 3
+    match get_queue(api_hostname, Some(3)).await {
         Some(queue_data) => {
             println!(
                 "                          {}{}",
