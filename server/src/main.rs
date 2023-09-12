@@ -423,11 +423,12 @@ fn rocket() -> _ {
     drop(locked_tags_data);
 
     // build some accessors for our Scheduler...
+    let mpd_conn_clone = Arc::clone(&mpd_conn);
     let song_queue_clone = Arc::clone(&song_queue);
     let tags_data_clone = Arc::clone(&tags_data);
 
     // Spawn a detached asynchronous task to run the scheduler_mainbody function
-    thread::spawn(|| scheduler_mainbody(song_queue_clone, tags_data_clone));
+    thread::spawn(|| scheduler_mainbody(mpd_conn_clone, song_queue_clone, tags_data_clone));
 
     rocket::build()
         .manage(tags_data) // Pass TagsData as a rocket::State
