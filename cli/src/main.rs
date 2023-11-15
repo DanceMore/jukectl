@@ -259,7 +259,10 @@ async fn status(api_hostname: &str) -> Result<(), reqwest::Error> {
                 queue_data.length.to_string().cyan().bold()
             );
         }
-        None => todo!(),
+	 None => {
+            eprintln!("[!] unable to fetch queue, is your host configuration correct? is the service offline?");
+            std::process::exit(1);
+        }
     }
 
     let client = reqwest::Client::new();
