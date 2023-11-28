@@ -68,7 +68,7 @@ jobs:
       run: |
         rustup target add x86_64-apple-darwin
         cargo build --package jukectl --release --target x86_64-apple-darwin
-        cp target/x86_64-apple-darwin/release/jukectl ./jukectl-macos
+        cp target/x86_64-apple-darwin/release/jukectl ./jukectl-darwin-x86_64
 
     - name: Generate Changelog
       run: echo "# Release Notes" > changelog.txt  # Replace this with your actual changelog content
@@ -78,7 +78,7 @@ jobs:
       with:
         files: |
           changelog.txt
-          jukectl-macos
+          jukectl-darwin-x86_64
         body_path: changelog.txt
         tag_name: ${{ env.tag }}
         token: ${{ secrets.GITHUB_TOKEN }}
