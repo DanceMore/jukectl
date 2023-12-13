@@ -6,7 +6,7 @@ RUN cargo build --release --package jukectl-server
 
 ### stage 2
 # Create a new lightweight image with just the binary
-FROM alpine:3.19
+FROM debian:bookworm-slim
 
 # Set the working directory inside the container
 WORKDIR /app
