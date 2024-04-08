@@ -1,5 +1,5 @@
 # Use the official Rust image as the base image
-FROM rust:1.76 as builder
+FROM rust:1.77 as builder
 WORKDIR /app
 COPY . .
 RUN cargo build --release --package jukectl-server
