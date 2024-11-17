@@ -64,7 +64,7 @@ jobs:
         tag=$(git rev-parse --short=8 ${{ github.sha }})
         echo "tag=${tag}" >> $GITHUB_ENV
 
-    - name: Build for macOS
+    - name: Build for macOS x86_64
       run: |
         rustup target add x86_64-apple-darwin
         cargo build --package jukectl --release --target x86_64-apple-darwin
@@ -75,6 +75,7 @@ jobs:
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
+      if: ${{ !cancelled() }}
       with:
         files: |
           changelog.txt
@@ -100,9 +101,9 @@ jobs:
       shell: powershell
       run: |
         $tag = git rev-parse --short=8 $env:GITHUB_SHA
-        Set-Content -Path $env:GITHUB_ENV -Value "tag=$tag"
+        Add-Content -Path $env:GITHUB_ENV -Value "tag=$tag"
 
-    - name: Build for Windows x86-64
+    - name: Build for Windows x86_64
       run: |
         cargo build --package jukectl --release --target x86_64-pc-windows-msvc
         ls target/x86_64-pc-windows-msvc/release/
@@ -113,9 +114,9 @@ jobs:
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
+      if: ${{ !cancelled() }}
       with:
         files: |
-          changelog.txt
           jukectl-windows-x86_64.exe
         body_path: changelog.txt
         tag_name: ${{ env.tag }}
