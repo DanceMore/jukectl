@@ -132,7 +132,7 @@ fn skip(mpd_conn: &rocket::State<Arc<Mutex<MpdConn>>>) -> Json<SkipResponse> {
         .expect("Failed to get MPD queue");
 
     let skipped_song = now_playing_queue
-        .get(0)
+        .first()
         .map(|song| song.file.clone())
         .unwrap_or_default();
     let new_song = now_playing_queue
