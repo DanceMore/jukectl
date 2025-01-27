@@ -81,4 +81,10 @@ document how to fire the containerized ncurses CLI (which I haven't finished ins
 
 add environment var for default json tags
   maybe encode in base64 lololol
+
+add a janitor service / ticker to clean up or enforce certain stuff
+  disable random mode!
+  I think we already ensure consume=true
+  might also trigger library updates ...?
+    can we subscribe to disk ....?
 ```
