@@ -434,7 +434,7 @@ async fn perform_tagging(
 
         // Attempt to deserialize the JSON response into a Vec<String>
         match serde_json::from_str::<Vec<String>>(&root_body) {
-            Ok(strings) => strings.get(0).map(|song| song.to_owned()),
+            Ok(strings) => strings.first().map(|song| song.to_owned()),
             Err(e) => {
                 eprintln!("Error: Failed to deserialize root response: {}", e);
                 None
