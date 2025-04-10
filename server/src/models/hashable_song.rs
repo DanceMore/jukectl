@@ -1,6 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 // Create a newtype wrapper for Mpd::Song
+#[derive(Debug)]
 pub struct HashableSong(pub mpd::Song);
 
 impl Eq for HashableSong {}
