@@ -2,7 +2,8 @@ use rand::seq::SliceRandom;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 
-use crate::HashableSong;
+//use crate::HashableSong;
+use crate::models::hashable_song::HashableSong;
 
 // Define your custom queue type
 pub struct SongQueue {

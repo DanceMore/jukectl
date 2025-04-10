@@ -10,13 +10,10 @@ use std::io::Write;
 use std::sync::{Arc, RwLock};
 use std::thread;
 
-mod models;
-use crate::models::hashable_song::HashableSong;
-use crate::models::song_queue::SongQueue;
-use crate::models::tags_data::TagsData;
-
-mod mpd_conn;
-use crate::mpd_conn::MpdConn;
+// local imports
+use jukectl_server::mpd_conn::MpdConn;
+use jukectl_server::models::song_queue::SongQueue;
+use jukectl_server::models::tags_data::TagsData;
 
 struct AppState {
     mpd_conn: Arc<RwLock<MpdConn>>,
@@ -165,7 +162,7 @@ fn skip(app_state: &rocket::State<AppState>) -> Json<SkipResponse> {
 
 #[get("/tags")]
 fn tags(app_state: &rocket::State<AppState>) -> Json<TagsData> {
-    let read_guard = tags_data.read().expect("Failed to acquire read lock");
+    let read_guard = app_state.tags_data.read().expect("Failed to acquire read lock during GET /tags");
     Json(read_guard.clone())
 }
 
