@@ -13,7 +13,7 @@ use std::thread;
 // local imports
 use jukectl_server::models::song_queue::SongQueue;
 use jukectl_server::models::tags_data::TagsData;
-use jukectl_server::mpd_conn::MpdConn;
+use jukectl_server::mpd_conn::mpd_conn::MpdConn;
 
 struct AppState {
     mpd_conn: Arc<RwLock<MpdConn>>,
