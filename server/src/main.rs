@@ -11,9 +11,9 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 
 // local imports
-use jukectl_server::mpd_conn::MpdConn;
 use jukectl_server::models::song_queue::SongQueue;
 use jukectl_server::models::tags_data::TagsData;
+use jukectl_server::mpd_conn::MpdConn;
 
 struct AppState {
     mpd_conn: Arc<RwLock<MpdConn>>,
@@ -94,7 +94,10 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
 //}
 #[get("/")]
 fn index(app_state: &rocket::State<AppState>) -> Json<Vec<String>> {
-    let mut locked_mpd_conn = app_state.mpd_conn.write().expect("Failed to lock MPD connection");
+    let mut locked_mpd_conn = app_state
+        .mpd_conn
+        .write()
+        .expect("Failed to lock MPD connection");
 
     println!("[-] inside index method");
     // Attempt to retrieve the song queue
@@ -126,7 +129,10 @@ struct SkipResponse {
 }
 #[post("/skip")]
 fn skip(app_state: &rocket::State<AppState>) -> Json<SkipResponse> {
-    let mut locked_mpd_conn = app_state.mpd_conn.write().expect("Failed to lock MPD connection");
+    let mut locked_mpd_conn = app_state
+        .mpd_conn
+        .write()
+        .expect("Failed to lock MPD connection");
 
     // Get the first song from the now playing queue
     let now_playing_queue = locked_mpd_conn
@@ -162,7 +168,10 @@ fn skip(app_state: &rocket::State<AppState>) -> Json<SkipResponse> {
 
 #[get("/tags")]
 fn tags(app_state: &rocket::State<AppState>) -> Json<TagsData> {
-    let read_guard = app_state.tags_data.read().expect("Failed to acquire read lock during GET /tags");
+    let read_guard = app_state
+        .tags_data
+        .read()
+        .expect("Failed to acquire read lock during GET /tags");
     Json(read_guard.clone())
 }
 
@@ -174,11 +183,17 @@ pub struct TagsUpdate {
 #[post("/tags", data = "<tags_update>")]
 fn update_tags(
     tags_update: Json<TagsUpdate>,
-    app_state: &rocket::State<AppState>
+    app_state: &rocket::State<AppState>,
 ) -> Json<TagsData> {
     let mut locked_mpd_conn = app_state.mpd_conn.write().expect("Failed to lock MpdConn");
-    let mut locked_song_queue = app_state.song_queue.write().expect("Failed to lock SongQueue");
-    let mut locked_tags_data = app_state.tags_data.write().expect("Failed to lock TagsData");
+    let mut locked_song_queue = app_state
+        .song_queue
+        .write()
+        .expect("Failed to lock SongQueue");
+    let mut locked_tags_data = app_state
+        .tags_data
+        .write()
+        .expect("Failed to lock TagsData");
 
     // Check if 'any' and 'not' fields are present and update them if needed
     if let Some(any) = &tags_update.any {
@@ -220,14 +235,14 @@ struct QueueResponse {
 
 // Your existing route handler for /queue.
 #[get("/queue?<count>")]
-fn get_queue(
-    app_state: &rocket::State<AppState>,
-    count: Option<usize>,
-) -> Json<QueueResponse> {
+fn get_queue(app_state: &rocket::State<AppState>, count: Option<usize>) -> Json<QueueResponse> {
     // Extract the count value from the Option<Form<usize>> parameter
     let count_value = count.unwrap_or(3); // Use a default value of 3 if count is None
 
-    let locked_song_queue = app_state.song_queue.read().expect("Failed to lock SongQueue");
+    let locked_song_queue = app_state
+        .song_queue
+        .read()
+        .expect("Failed to lock SongQueue");
     let length = locked_song_queue.len(); // Get the length of the queue
 
     // TODO: I kinda hate this presentation layer formatting, but it compiles...
@@ -263,11 +278,12 @@ struct ShuffleResponse {
 }
 
 #[post("/shuffle")]
-fn shuffle_songs(
-    app_state: &rocket::State<AppState>
-) -> Json<ShuffleResponse> {
+fn shuffle_songs(app_state: &rocket::State<AppState>) -> Json<ShuffleResponse> {
     let mut locked_mpd_conn = app_state.mpd_conn.write().expect("Failed to lock MpdConn");
-    let mut locked_song_queue = app_state.song_queue.write().expect("Failed to lock SongQueue");
+    let mut locked_song_queue = app_state
+        .song_queue
+        .write()
+        .expect("Failed to lock SongQueue");
     let locked_tags_data = app_state.tags_data.read().expect("Failed to lock TagsData");
 
     // Get the desired songs
@@ -312,13 +328,16 @@ struct SongTagsUpdate {
 #[post("/song/tags", data = "<song_tags>")]
 fn update_song_tags(
     song_tags: Json<SongTagsUpdate>,
-    app_state: &rocket::State<AppState>
+    app_state: &rocket::State<AppState>,
 ) -> Json<String> {
     let add_tags = &song_tags.add; // Tags to add
     let remove_tags = &song_tags.remove; // Tags to remove
 
     // Lock the MPD client connection
-    let mut locked_mpd_conn = app_state.mpd_conn.write().expect("Failed to lock MPD connection");
+    let mut locked_mpd_conn = app_state
+        .mpd_conn
+        .write()
+        .expect("Failed to lock MPD connection");
 
     // Get the first song from the now playing queue
     let first_song = locked_mpd_conn
@@ -427,9 +446,9 @@ fn rocket() -> _ {
     let tags_data_clone = Arc::clone(&tags_data);
 
     let app_state = AppState {
-      mpd_conn: Arc::clone(&mpd_conn),
-      song_queue: Arc::clone(&song_queue),
-      tags_data: Arc::clone(&tags_data)
+        mpd_conn: Arc::clone(&mpd_conn),
+        song_queue: Arc::clone(&song_queue),
+        tags_data: Arc::clone(&tags_data),
     };
 
     // Spawn a detached asynchronous task to run the scheduler_mainbody function

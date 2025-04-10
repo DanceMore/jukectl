@@ -6,7 +6,6 @@
 ///
 /// For example, this is used to construct playlists based on tags,
 /// ensuring no duplicates even when the same song appears under multiple tags.
-
 use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone)]

@@ -23,7 +23,8 @@ impl MpdConn {
             .expect("Failed to parse MPD_PORT as u16");
 
         // Resolve the host and port once
-        let address = (host.as_str(), port).to_socket_addrs()
+        let address = (host.as_str(), port)
+            .to_socket_addrs()
             .map_err(|e| mpd::error::Error::Io(e))?
             .collect::<Vec<std::net::SocketAddr>>();
 

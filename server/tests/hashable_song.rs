@@ -5,8 +5,8 @@ mod tests {
     use super::*;
     use mpd::Song;
     use std::collections::HashSet;
-    use std::hash::Hasher;
     use std::hash::Hash;
+    use std::hash::Hasher;
 
     fn make_song(file: &str) -> Song {
         let mut song = Song::default();
@@ -80,5 +80,53 @@ mod tests {
         let wrapped = HashableSong(original.clone());
         let unwrapped: Song = wrapped.into();
         assert_eq!(original.file, unwrapped.file);
+    }
+
+    #[test]
+    fn songs_with_same_file_path_should_be_equal_in_hashset() {
+        let song1 = mpd::Song {
+            file: String::from("music/foo.mp3"),
+            ..Default::default()
+        };
+
+        let mut song2 = song1.clone();
+        song2.title = Some(String::from("Different Title"));
+
+        let mut set = HashSet::new();
+        set.insert(HashableSong(song1));
+        let inserted = set.insert(HashableSong(song2)); // should be false, because file is same
+
+        assert!(
+            !inserted,
+            "Duplicate song should not be inserted based on file"
+        );
+        assert_eq!(
+            set.len(),
+            1,
+            "Set should contain only one unique song by file path"
+        );
+    }
+
+    #[test]
+    fn songs_with_different_file_paths_should_be_unique() {
+        let song1 = mpd::Song {
+            file: String::from("music/foo.mp3"),
+            ..Default::default()
+        };
+
+        let song2 = mpd::Song {
+            file: String::from("music/bar.mp3"),
+            ..Default::default()
+        };
+
+        let mut set = HashSet::new();
+        set.insert(HashableSong(song1));
+        set.insert(HashableSong(song2));
+
+        assert_eq!(
+            set.len(),
+            2,
+            "Set should contain both songs with different file paths"
+        );
     }
 }
