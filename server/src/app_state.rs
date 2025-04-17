@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use rocket::tokio::sync::RwLock;
+use std::sync::Arc;
 
 use jukectl_server::models::song_queue::SongQueue;
 use jukectl_server::models::tags_data::TagsData;
@@ -17,7 +17,7 @@ pub fn initialize() -> AppState {
     let mpd_conn = Arc::new(RwLock::new(
         MpdConn::new().expect("Failed to create MPD connection"),
     ));
-    
+
     let song_queue = Arc::new(RwLock::new(SongQueue::new()));
 
     // Shareable TagsData with default values

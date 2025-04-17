@@ -12,7 +12,7 @@ pub async fn start_scheduler(app_state: AppState) {
 async fn scheduler_mainbody(app_state: AppState) {
     loop {
         debug!("[-] scheduler firing");
-        
+
         // Get locks asynchronously
         let mut locked_mpd_conn = app_state.mpd_conn.write().await;
         let mut locked_song_queue = app_state.song_queue.write().await;
@@ -29,7 +29,7 @@ async fn scheduler_mainbody(app_state: AppState) {
         // only do work if the live MPD queue length is less than 2
         // ie: 1 Song now-playing, 1 Song on-deck
         let mpd_queue_result = locked_mpd_conn.mpd.queue();
-        
+
         match mpd_queue_result {
             Ok(queue) => {
                 let now_playing_len = queue.len();
@@ -47,7 +47,7 @@ async fn scheduler_mainbody(app_state: AppState) {
                     print!(".");
                     let _ = std::io::stdout().flush();
                 }
-            },
+            }
             Err(error) => {
                 eprintln!("[!] Error getting MPD queue: {}", error);
                 // Consider reconnecting here
@@ -61,7 +61,7 @@ async fn scheduler_mainbody(app_state: AppState) {
         drop(locked_song_queue);
         drop(locked_tags_data);
         drop(locked_mpd_conn);
-        
+
         // Non-blocking sleep using tokio
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
