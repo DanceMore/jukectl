@@ -2,7 +2,6 @@ use mpd::{
     error::Error, error::ErrorCode, error::Result, error::ServerError, Client, Playlist, Song,
 };
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
