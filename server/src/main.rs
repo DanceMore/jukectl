@@ -2,13 +2,8 @@
 extern crate rocket;
 
 use rocket::serde::json::Json;
-use rocket::tokio;
-use rocket::tokio::time::Duration;
 use serde::Deserialize;
 use serde::Serialize;
-
-use std::io::Write;
-use std::sync::Arc;
 
 // local imports
 mod app_state;
@@ -19,69 +14,6 @@ use scheduler::start_scheduler;
 use jukectl_server::models::song_queue::SongQueue;
 use jukectl_server::models::tags_data::TagsData;
 use jukectl_server::mpd_conn::mpd_conn::MpdConn;
-
-// Refactored scheduler to use async/await
-async fn scheduler_mainbody(
-    mpd_conn: Arc<tokio::sync::RwLock<MpdConn>>,
-    song_queue: Arc<tokio::sync::RwLock<SongQueue>>,
-    tags_data: Arc<tokio::sync::RwLock<TagsData>>,
-) {
-    loop {
-        debug!("[-] scheduler firing");
-
-        // Get locks asynchronously
-        let mut locked_mpd_conn = mpd_conn.write().await;
-        let mut locked_song_queue = song_queue.write().await;
-        let locked_tags_data = tags_data.read().await;
-
-        // make sure SongQueue is not empty
-        if locked_song_queue.len() == 0 {
-            info!("[!] scheduler sees an empty queue, refilling...");
-            // If song_queue is empty, fetch songs and add them
-            let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
-            locked_song_queue.shuffle_and_add(songs);
-        }
-
-        // only do work if the live MPD queue length is less than 2
-        // ie: 1 Song now-playing, 1 Song on-deck
-        let mpd_queue_result = locked_mpd_conn.mpd.queue();
-
-        match mpd_queue_result {
-            Ok(queue) => {
-                let now_playing_len = queue.len();
-                if now_playing_len < 2 {
-                    if let Some(song) = locked_song_queue.remove() {
-                        if let Err(error) = locked_mpd_conn.mpd.push(song.clone()) {
-                            eprintln!("[!] Error pushing song to MPD: {}", error);
-                        } else {
-                            info!("[+] scheduler adding song {}", song.file);
-                            let _ = locked_mpd_conn.mpd.play();
-                        }
-                    }
-                } else {
-                    // do nothing, but let's print to prove we worked...
-                    print!(".");
-                    let _ = std::io::stdout().flush();
-                }
-            }
-            Err(error) => {
-                eprintln!("[!] Error getting MPD queue: {}", error);
-                // Consider reconnecting here
-                if let Err(reconnect_error) = locked_mpd_conn.reconnect() {
-                    eprintln!("[!] Error reconnecting to MPD: {}", reconnect_error);
-                }
-            }
-        }
-
-        // release our locks
-        drop(locked_mpd_conn);
-        drop(locked_song_queue);
-        drop(locked_tags_data);
-
-        // Non-blocking sleep using tokio
-        tokio::time::sleep(Duration::from_secs(3)).await;
-    }
-}
 
 fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
     let mut filename_array = Vec::new();
