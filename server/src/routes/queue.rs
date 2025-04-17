@@ -14,7 +14,7 @@ struct QueueResponse {
     tail: Vec<String>,
 }
 
-// Your existing route handler for /queue.
+// Option<> on count makes the Query Param optional :)
 #[get("/queue?<count>")]
 async fn get_queue(
     app_state: &rocket::State<AppState>,
