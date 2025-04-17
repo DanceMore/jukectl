@@ -12,7 +12,10 @@ use std::sync::Arc;
 
 // local imports
 mod app_state;
-use crate::app_state::AppState;
+use app_state::AppState;
+mod scheduler;
+use scheduler::start_scheduler;
+
 use jukectl_server::models::song_queue::SongQueue;
 use jukectl_server::models::tags_data::TagsData;
 use jukectl_server::mpd_conn::mpd_conn::MpdConn;
@@ -391,34 +394,12 @@ async fn update_song_tags(
 
 #[launch]
 fn rocket() -> _ {
-    // Initialize tokio synchronization primitives
-    let mpd_conn = Arc::new(tokio::sync::RwLock::new(
-        MpdConn::new().expect("Failed to create MPD connection"),
-    ));
-    let song_queue = Arc::new(tokio::sync::RwLock::new(SongQueue::new()));
+    // Initialize the app state
+    let app_state = app_state::initialize();
 
-    // Shareable TagsData with default values
-    let default_tags_data = TagsData {
-        any: vec!["jukebox".to_string()],
-        not: vec!["explicit".to_string()],
-    };
-    let tags_data = Arc::new(tokio::sync::RwLock::new(default_tags_data));
-
-    // Create clones for the scheduler task
-    let mpd_conn_clone = Arc::clone(&mpd_conn);
-    let song_queue_clone = Arc::clone(&song_queue);
-    let tags_data_clone = Arc::clone(&tags_data);
-
-    // Create the Rocket AppState
-    let app_state = AppState {
-        mpd_conn: Arc::clone(&mpd_conn),
-        song_queue: Arc::clone(&song_queue),
-        tags_data: Arc::clone(&tags_data),
-    };
-
-    // Build the rocket instance with a custom fairing to handle initialization
+    // Build the rocket instance with routes and scheduler
     rocket::build()
-        .manage(app_state)
+        .manage(app_state.clone())
         .mount(
             "/",
             routes![
@@ -431,35 +412,11 @@ fn rocket() -> _ {
                 update_song_tags
             ],
         )
-        .attach(rocket::fairing::AdHoc::on_liftoff(
-            "Initialize Queue",
-            |rocket| {
-                Box::pin(async move {
-                    let state = rocket.state::<AppState>().unwrap();
-
-                    // Acquire locks for initial setup
-                    let mut locked_mpd_conn = state.mpd_conn.write().await;
-                    let mut locked_song_queue = state.song_queue.write().await;
-                    let locked_tags_data = state.tags_data.read().await;
-
-                    // Set up the jukebox SongQueue at boot
-                    println!("[+] Initializing song queue...");
-                    let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
-                    locked_song_queue.shuffle_and_add(songs);
-
-                    // Release locks
-                    drop(locked_mpd_conn);
-                    drop(locked_song_queue);
-                    drop(locked_tags_data);
-
-                    // Start the scheduler
-                    println!("[+] Starting scheduler...");
-                    tokio::spawn(scheduler_mainbody(
-                        mpd_conn_clone,
-                        song_queue_clone,
-                        tags_data_clone,
-                    ));
-                })
-            },
-        ))
+        .attach(rocket::fairing::AdHoc::on_liftoff("Initialize Queue and Scheduler", |rocket| {
+            Box::pin(async move {
+                let state = rocket.state::<AppState>().unwrap();
+                app_state::initialize_queue(state).await;
+                start_scheduler(app_state).await;
+            })
+        }))
 }
