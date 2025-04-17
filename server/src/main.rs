@@ -11,15 +11,11 @@ use std::io::Write;
 use std::sync::Arc;
 
 // local imports
+mod app_state;
+use crate::app_state::AppState;
 use jukectl_server::models::song_queue::SongQueue;
 use jukectl_server::models::tags_data::TagsData;
 use jukectl_server::mpd_conn::mpd_conn::MpdConn;
-
-struct AppState {
-    mpd_conn: Arc<tokio::sync::RwLock<MpdConn>>,
-    song_queue: Arc<tokio::sync::RwLock<SongQueue>>,
-    tags_data: Arc<tokio::sync::RwLock<TagsData>>,
-}
 
 // Refactored scheduler to use async/await
 async fn scheduler_mainbody(
