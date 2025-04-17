@@ -133,7 +133,7 @@ jobs:
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ needs.create-release.outputs.version }}
+        tag_name: ${{ needs.create-release.outputs.version_without_v }}
         files: jukectl-darwin-x86_64-${{ needs.create-release.outputs.version_without_v }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
