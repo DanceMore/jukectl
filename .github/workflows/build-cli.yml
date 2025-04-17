@@ -20,7 +20,7 @@ jobs:
         id: set_version
         run: |
           # Extract current version from Cargo.toml
-          current_version=$(grep -m 1 'version = "[0-9]*\.[0-9]*\.[0-9]*"' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          current_version=$(grep -m 1 'version = "[0-9]*\.[0-9]*\.[0-9]*"' cli/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
           echo "Current version: $current_version"
           
           # Check if commit message contains version bump indicators
@@ -39,7 +39,7 @@ jobs:
           echo "New version: $new_version"
           
           # Update version in Cargo.toml
-          sed -i "s/^version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"$new_version\"/" Cargo.toml
+          sed -i "s/^version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"$new_version\"/" cli/Cargo.toml
           
           # Set outputs for later steps
           echo "version=v$new_version" >> $GITHUB_OUTPUT
@@ -49,8 +49,8 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add Cargo.toml
-          git commit -m "Bump version to ${{ steps.set_version.outputs.version }}"
+          git add cli/Cargo.toml
+          git commit -m "Bump cli version to ${{ steps.set_version.outputs.version }}"
           git push
 
       - name: Create Release
