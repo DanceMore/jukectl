@@ -57,7 +57,10 @@ async fn scheduler_mainbody(app_state: AppState) {
             }
         }
 
-        // Locks are automatically released when they go out of scope
+        // drop locks until the next loop...
+        drop(locked_song_queue);
+        drop(locked_tags_data);
+        drop(locked_mpd_conn);
         
         // Non-blocking sleep using tokio
         tokio::time::sleep(Duration::from_secs(3)).await;
