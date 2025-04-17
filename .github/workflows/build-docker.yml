@@ -11,8 +11,7 @@ on:
 
 jobs:
   build:
-    # target older version so static bins run better on older Linuxes (debian:10, etc)
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: checkout code
