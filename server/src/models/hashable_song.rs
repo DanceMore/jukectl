@@ -1,6 +1,14 @@
+/// A wrapper around `mpd::Song` that enables hashing and equality
+/// comparison based on the song's file path.
+///
+/// we care about song identity based on the unique `file` field as
+/// our "Primary Key" , and not the full metadata (e.g., artist, title, duration).
+///
+/// For example, this is used to construct playlists based on tags,
+/// ensuring no duplicates even when the same song appears under multiple tags.
 use std::hash::{Hash, Hasher};
 
-// Create a newtype wrapper for Mpd::Song
+#[derive(Debug, Clone)]
 pub struct HashableSong(pub mpd::Song);
 
 impl Eq for HashableSong {}

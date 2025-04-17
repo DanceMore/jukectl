@@ -6,12 +6,74 @@ on:
       - main
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.set_version.outputs.version }}
+      version_without_v: ${{ steps.set_version.outputs.version_without_v }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for proper versioning
+
+      - name: Set version
+        id: set_version
+        run: |
+          # Extract current version from Cargo.toml
+          current_version=$(grep -m 1 'version = "[0-9]*\.[0-9]*\.[0-9]*"' cli/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "Current version: $current_version"
+          
+          # Check if commit message contains version bump indicators
+          commit_msg=$(git log -1 --pretty=%B)
+          if [[ "$commit_msg" == *"#major"* ]]; then
+            # Increment the major version
+            new_version=$(echo $current_version | awk -F. '{print $1+1".0.0"}')
+          elif [[ "$commit_msg" == *"#minor"* ]]; then
+            # Increment the minor version
+            new_version=$(echo $current_version | awk -F. '{print $1"."$2+1".0"}')
+          else
+            # Increment the patch version by default
+            new_version=$(echo $current_version | awk -F. '{print $1"."$2"."$3+1}')
+          fi
+          
+          echo "New version: $new_version"
+          
+          # Update version in Cargo.toml
+          sed -i "s/^version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"$new_version\"/" cli/Cargo.toml
+          
+          # Set outputs for later steps
+          echo "version=v$new_version" >> $GITHUB_OUTPUT
+          echo "version_without_v=$new_version" >> $GITHUB_OUTPUT
+
+      - name: Commit version update
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add cli/Cargo.toml
+          git commit -m "Bump cli version to ${{ steps.set_version.outputs.version }}"
+          git push
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.set_version.outputs.version }}
+          name: ${{ steps.set_version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-linux:
     runs-on: ubuntu-latest
+    needs: create-release
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+      with:
+        ref: main  # Ensure we're using the updated code with version bump
 
     - name: Setup Rust
       uses: actions-rs/toolchain@v1
@@ -21,140 +83,126 @@ jobs:
     - name: Install OpenSSL Development Packages
       run: sudo apt-get update && sudo apt-get install -y libssl-dev
 
-    - name: Set release tag
-      id: set_tag
-      run: |
-        tag=$(git rev-parse --short=8 ${{ github.sha }})
-        echo "tag=${tag}" >> $GITHUB_ENV
-
     - name: Build for Linux x86-64
       run: |
         rustup target add x86_64-unknown-linux-gnu
         cargo build --package jukectl --release --target x86_64-unknown-linux-gnu
-        cp target/x86_64-unknown-linux-gnu/release/jukectl ./jukectl-linux-x86_64
+        cp target/x86_64-unknown-linux-gnu/release/jukectl ./jukectl-linux-x86_64-${{ needs.create-release.outputs.version_without_v }}
 
-    - name: Generate Changelog
-      run: echo "# Release Notes" > changelog.txt  # Replace this with your actual changelog content
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: jukectl-linux-x86_64-${{ needs.create-release.outputs.version_without_v }}
+        path: jukectl-linux-x86_64-${{ needs.create-release.outputs.version_without_v }}
 
-    - name: Create Release
+    - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          changelog.txt
-          jukectl-linux-x86_64
-        body_path: changelog.txt
-        tag_name: ${{ env.tag }}
-        token: ${{ secrets.GITHUB_TOKEN }}
+        tag_name: ${{ needs.create-release.outputs.version }}
+        files: jukectl-linux-x86_64-${{ needs.create-release.outputs.version_without_v }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-macos:
     runs-on: macOS-latest
+    needs: create-release
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+      with:
+        ref: main
 
     - name: Setup Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-
-    - name: Set release tag
-      id: set_tag
-      run: |
-        tag=$(git rev-parse --short=8 ${{ github.sha }})
-        echo "tag=${tag}" >> $GITHUB_ENV
 
     - name: Build for macOS x86_64
       run: |
         rustup target add x86_64-apple-darwin
         cargo build --package jukectl --release --target x86_64-apple-darwin
-        cp target/x86_64-apple-darwin/release/jukectl ./jukectl-darwin-x86_64
+        cp target/x86_64-apple-darwin/release/jukectl ./jukectl-darwin-x86_64-${{ needs.create-release.outputs.version_without_v }}
 
-    - name: Generate Changelog
-      run: echo "# Release Notes" > changelog.txt  # Replace this with your actual changelog content
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      if: ${{ !cancelled() }}
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
       with:
-        files: |
-          changelog.txt
-          jukectl-darwin-x86_64
-        body_path: changelog.txt
-        tag_name: ${{ env.tag }}
-        token: ${{ secrets.GITHUB_TOKEN }}
+        name: jukectl-darwin-x86_64-${{ needs.create-release.outputs.version_without_v }}
+        path: jukectl-darwin-x86_64-${{ needs.create-release.outputs.version_without_v }}
+
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ needs.create-release.outputs.version }}
+        files: jukectl-darwin-x86_64-${{ needs.create-release.outputs.version_without_v }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-macos-arm64:
     runs-on: macos-latest
+    needs: create-release
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+      with:
+        ref: main
 
     - name: Setup Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
 
-    - name: Set release tag
-      id: set_tag
-      run: |
-        tag=$(git rev-parse --short=8 ${{ github.sha }})
-        echo "tag=${tag}" >> $GITHUB_ENV
-
     - name: Build for macOS ARM64
       run: |
         rustup target add aarch64-apple-darwin
         cargo build --package jukectl --release --target aarch64-apple-darwin
-        cp target/aarch64-apple-darwin/release/jukectl ./jukectl-darwin-arm64
+        cp target/aarch64-apple-darwin/release/jukectl ./jukectl-darwin-arm64-${{ needs.create-release.outputs.version_without_v }}
 
-    - name: Generate Changelog
-      run: echo "# Release Notes" > changelog.txt  # Replace this with your actual changelog content
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      if: ${{ !cancelled() }}
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
       with:
-        files: |
-          jukectl-darwin-arm64
-        body_path: changelog.txt
-        tag_name: ${{ env.tag }}
-        token: ${{ secrets.GITHUB_TOKEN }}
+        name: jukectl-darwin-arm64-${{ needs.create-release.outputs.version_without_v }}
+        path: jukectl-darwin-arm64-${{ needs.create-release.outputs.version_without_v }}
+
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ needs.create-release.outputs.version }}
+        files: jukectl-darwin-arm64-${{ needs.create-release.outputs.version_without_v }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
     runs-on: windows-latest
+    needs: create-release
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+      with:
+        ref: main
 
     - name: Setup Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable-msvc
 
-    - name: Set release tag
-      id: set_tag
-      shell: powershell
-      run: |
-        $tag = git rev-parse --short=8 $env:GITHUB_SHA
-        Add-Content -Path $env:GITHUB_ENV -Value "tag=$tag"
-
     - name: Build for Windows x86_64
       run: |
         cargo build --package jukectl --release --target x86_64-pc-windows-msvc
-        ls target/x86_64-pc-windows-msvc/release/
-        cp target/x86_64-pc-windows-msvc/release/jukectl.exe ./jukectl-windows-x86_64.exe
+        cp target/x86_64-pc-windows-msvc/release/jukectl.exe ./jukectl-windows-x86_64-${{ needs.create-release.outputs.version_without_v }}.exe
 
-    - name: Generate Changelog
-      run: echo "# Release Notes" > changelog.txt  # Replace this with your actual changelog content
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      if: ${{ !cancelled() }}
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
       with:
-        files: |
-          jukectl-windows-x86_64.exe
-        body_path: changelog.txt
-        tag_name: ${{ env.tag }}
-        token: ${{ secrets.GITHUB_TOKEN }}
+        name: jukectl-windows-x86_64-${{ needs.create-release.outputs.version_without_v }}
+        path: jukectl-windows-x86_64-${{ needs.create-release.outputs.version_without_v }}.exe
+
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ needs.create-release.outputs.version }}
+        files: jukectl-windows-x86_64-${{ needs.create-release.outputs.version_without_v }}.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

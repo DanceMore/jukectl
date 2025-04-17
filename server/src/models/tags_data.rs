@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-use crate::HashableSong;
-use crate::MpdConn;
+use crate::models::hashable_song::HashableSong;
+use crate::mpd_conn::mpd_conn::MpdConn;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagsData {
