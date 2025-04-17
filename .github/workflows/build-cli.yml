@@ -87,19 +87,19 @@ jobs:
       run: |
         rustup target add x86_64-unknown-linux-gnu
         cargo build --package jukectl --release --target x86_64-unknown-linux-gnu
-        cp target/x86_64-unknown-linux-gnu/release/jukectl ./jukectl-linux-x86_64-${{ needs.create-release.outputs.version_without_v }}
+        cp target/x86_64-unknown-linux-gnu/release/jukectl ./jukectl-${{ needs.create-release.outputs.version_without_v }}-linux-x86_64
 
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: jukectl-linux-x86_64-${{ needs.create-release.outputs.version_without_v }}
-        path: jukectl-linux-x86_64-${{ needs.create-release.outputs.version_without_v }}
+        name: jukectl-${{ needs.create-release.outputs.version_without_v }}-linux-x86_64
+        path: jukectl-${{ needs.create-release.outputs.version_without_v }}-linux-x86_64
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ needs.create-release.outputs.version_without_v }}
-        files: jukectl-linux-x86_64-${{ needs.create-release.outputs.version_without_v }}
+        files: jukectl-${{ needs.create-release.outputs.version_without_v }}-linux-x86_64
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -122,19 +122,19 @@ jobs:
       run: |
         rustup target add x86_64-apple-darwin
         cargo build --package jukectl --release --target x86_64-apple-darwin
-        cp target/x86_64-apple-darwin/release/jukectl ./jukectl-darwin-x86_64-${{ needs.create-release.outputs.version_without_v }}
+        cp target/x86_64-apple-darwin/release/jukectl ./jukectl-${{ needs.create-release.outputs.version_without_v }}-darwin-x86_64
 
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: jukectl-darwin-x86_64-${{ needs.create-release.outputs.version_without_v }}
-        path: jukectl-darwin-x86_64-${{ needs.create-release.outputs.version_without_v }}
+        name: jukectl-${{ needs.create-release.outputs.version_without_v }}-darwin-x86_64
+        path: jukectl-${{ needs.create-release.outputs.version_without_v }}-darwin-x86_64
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ needs.create-release.outputs.version_without_v }}
-        files: jukectl-darwin-x86_64-${{ needs.create-release.outputs.version_without_v }}
+        files: jukectl-${{ needs.create-release.outputs.version_without_v }}-darwin-x86_64
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -157,19 +157,19 @@ jobs:
       run: |
         rustup target add aarch64-apple-darwin
         cargo build --package jukectl --release --target aarch64-apple-darwin
-        cp target/aarch64-apple-darwin/release/jukectl ./jukectl-darwin-arm64-${{ needs.create-release.outputs.version_without_v }}
+        cp target/aarch64-apple-darwin/release/jukectl ./jukectl-${{ needs.create-release.outputs.version_without_v }}-darwin-arm64
 
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: jukectl-darwin-arm64-${{ needs.create-release.outputs.version_without_v }}
-        path: jukectl-darwin-arm64-${{ needs.create-release.outputs.version_without_v }}
+        name: jukectl-${{ needs.create-release.outputs.version_without_v }}-darwin-arm64
+        path: jukectl-${{ needs.create-release.outputs.version_without_v }}-darwin-arm64
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ needs.create-release.outputs.version_without_v }}
-        files: jukectl-darwin-arm64-${{ needs.create-release.outputs.version_without_v }}
+        files: jukectl-${{ needs.create-release.outputs.version_without_v }}-darwin-arm64
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -191,18 +191,18 @@ jobs:
     - name: Build for Windows x86_64
       run: |
         cargo build --package jukectl --release --target x86_64-pc-windows-msvc
-        cp target/x86_64-pc-windows-msvc/release/jukectl.exe ./jukectl-windows-x86_64-${{ needs.create-release.outputs.version_without_v }}.exe
+        cp target/x86_64-pc-windows-msvc/release/jukectl.exe ./jukectl-${{ needs.create-release.outputs.version_without_v }}-windows-x86_64.exe
 
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: jukectl-windows-x86_64-${{ needs.create-release.outputs.version_without_v }}
-        path: jukectl-windows-x86_64-${{ needs.create-release.outputs.version_without_v }}.exe
+        name: jukectl-${{ needs.create-release.outputs.version_without_v }}-windows-x86_64
+        path: jukectl-${{ needs.create-release.outputs.version_without_v }}-windows-x86_64.exe
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ needs.create-release.outputs.version_without_v }}
-        files: jukectl-windows-x86_64-${{ needs.create-release.outputs.version_without_v }}.exe
+        files: jukectl-${{ needs.create-release.outputs.version_without_v }}-windows-x86_64.exe
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

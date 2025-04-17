@@ -1008,7 +1008,7 @@ dependencies = [
 
 [[package]]
 name = "jukectl"
-version = "0.1.2"
+version = "0.1.7"
 dependencies = [
  "clap",
  "colored",
