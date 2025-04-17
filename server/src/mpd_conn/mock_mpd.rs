@@ -1,12 +1,12 @@
 use mpd::{
-    error::Error, error::ErrorCode, error::Result, error::ServerError, Client, Playlist, Song,
+    error::Error, error::ErrorCode, error::Result, error::ServerError, Song,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct MockMpd {
-    playlists: Arc<Mutex<HashMap<String, Vec<Song>>>>,
+    playlists: Arc<Mutex<HashMap<String, Vec<Song>>>>, // we could use mpd::Playlist...? later...?
     queue: Arc<Mutex<Vec<Song>>>,
     is_consuming: Arc<Mutex<bool>>,
     connection_state: Arc<Mutex<bool>>, // true if connected

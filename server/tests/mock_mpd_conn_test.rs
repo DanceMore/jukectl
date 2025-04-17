@@ -58,22 +58,33 @@ mod tests {
         // Add songs to the queue
         let song1 = create_test_song("test/song1.mp3");
         let song2 = create_test_song("test/song2.mp3");
+        let song3 = create_test_song("test/song3.mp3");
 
         mock.push(song1).unwrap();
         mock.push(song2).unwrap();
+        mock.push(song3).unwrap();
 
         // Verify queue state
         let queue = mock.queue().unwrap();
-        assert_eq!(queue.len(), 2);
+        assert_eq!(queue.len(), 3);
         assert_eq!(queue[0].file, "test/song1.mp3");
+        assert_eq!(queue[2].file, "test/song3.mp3");
 
         // Delete a song
         mock.delete(0).unwrap();
 
         // Verify deletion
         let updated_queue = mock.queue().unwrap();
-        assert_eq!(updated_queue.len(), 1);
+        assert_eq!(updated_queue.len(), 2);
         assert_eq!(updated_queue[0].file, "test/song2.mp3");
+
+        // Delete another song
+        mock.delete(0).unwrap();
+
+        // Verify another deletion
+        let updated_queue = mock.queue().unwrap();
+        assert_eq!(updated_queue.len(), 1);
+        assert_eq!(updated_queue[0].file, "test/song3.mp3");
     }
 
     #[test]
