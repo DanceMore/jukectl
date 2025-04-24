@@ -61,7 +61,7 @@ impl SongQueue {
         // Start the timer
         let start_time = std::time::Instant::now();
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut vec: Vec<mpd::Song> = self.inner.drain(..).collect();
         vec.shuffle(&mut rng);
         self.inner.extend(vec);
@@ -79,16 +79,20 @@ impl SongQueue {
         // Start the timer
         let start_time = std::time::Instant::now();
 
-        // Start with an empty queue but reserve capacity first
-        self.inner = VecDeque::with_capacity(songs.len());
+        // Reserve space in the VecDeque for the songs
+        self.inner.reserve(songs.len());
 
-        // Convert and shuffle in one step
-        let mut rng = rand::thread_rng();
+        // Empty the queue
+        self.empty_queue();
+
+        // Convert HashSet to Vec for shuffling
         let mut song_vec: Vec<mpd::Song> = songs.into_iter().map(mpd::Song::from).collect();
+        let mut rng = rand::rng();
         song_vec.shuffle(&mut rng);
 
-        // Add all songs at once
-        self.inner.extend(song_vec);
+        for song in song_vec {
+            self.add(song);
+        }
 
         // Stop the timer
         let elapsed_time = start_time.elapsed();

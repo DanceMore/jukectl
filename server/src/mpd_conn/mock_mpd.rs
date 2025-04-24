@@ -1,4 +1,6 @@
-use mpd::{error::Error, error::ErrorCode, error::Result, error::ServerError, Song};
+use mpd::{
+    error::Error, error::ErrorCode, error::Result, error::ServerError, Song,
+};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
