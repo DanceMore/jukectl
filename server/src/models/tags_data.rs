@@ -8,10 +8,20 @@ use crate::mpd_conn::mpd_conn::MpdConn;
 pub struct TagsData {
     pub any: Vec<String>,
     pub not: Vec<String>,
+    pub album_aware: bool,
+    pub album_tags: Vec<String>, // Tags that contain album representatives
 }
 
 impl TagsData {
     pub fn get_allowed_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
+        if self.album_aware {
+            self.get_album_aware_songs(mpd_client)
+        } else {
+            self.get_regular_songs(mpd_client)
+        }
+    }
+
+    fn get_regular_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
         let (any_tags, not_tags) = self.tags_to_strings();
 
         // Create a HashSet to store the desired songs
@@ -44,6 +54,64 @@ impl TagsData {
         }
 
         desired_songs
+    }
+
+    // Helper function to get a tag value from a song
+    fn get_tag_value(song: &mpd::Song, tag_name: &str) -> Option<String> {
+        song.tags.iter()
+            .find(|(key, _)| key == tag_name)
+            .map(|(_, value)| value.clone())
+    }
+
+    fn get_album_aware_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
+        let mut album_songs = HashSet::new();
+
+        // Get album representative songs from album_tags
+        for tag in &self.album_tags {
+            if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
+                println!("[+] fetching album representatives from tag {}", tag);
+                
+                for representative_song in playlist {
+                    // For each representative song, get the full album
+                    if let Some(album_name) = Self::get_tag_value(&representative_song, "Album") {
+                        println!("[+] expanding album: {}", album_name);
+                        
+                        // Get all songs from this album
+                        let album_songs_result = self.get_songs_from_album(mpd_client, &album_name);
+                        for song in album_songs_result {
+                            album_songs.insert(HashableSong(song));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply "not" filters
+        let (_, not_tags) = self.tags_to_strings();
+        for tag in &not_tags {
+            if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
+                println!("[-] removing songs from tag {}", tag);
+                for song in playlist {
+                    album_songs.remove(&HashableSong(song));
+                }
+            }
+        }
+
+        album_songs
+    }
+
+    fn get_songs_from_album(&self, mpd_client: &mut MpdConn, album_name: &str) -> Vec<mpd::Song> {
+        // Use Term::Tag("album") to search by album tag
+        let mut query = mpd::Query::new();
+        query.and(mpd::Term::Tag("album".into()), album_name);
+        
+        match mpd_client.mpd.search(&query, None) {
+            Ok(songs) => songs,
+            Err(e) => {
+                eprintln!("[!] Error searching for album '{}': {}", album_name, e);
+                Vec::new()
+            }
+        }
     }
 
     fn tags_to_strings(&self) -> (HashSet<String>, HashSet<String>) {
