@@ -95,7 +95,7 @@ mod integration_tests {
 
         // Test album search functionality
         let mut query = Query::new();
-        query.and(Term::Tag("album".into()), "Dark Side of the Moon"); // Assuming this exists in test data
+        query.and(Term::Tag("album".into()), "Classic Rock Hits"); // Assuming this exists in test data
         
         let search_results = mpd_conn.mpd.search(&query, None)
             .expect("Failed to search for album");
@@ -110,7 +110,7 @@ mod integration_tests {
             let album = song.tags.iter()
                 .find(|(key, _)| key == "Album")
                 .map(|(_, value)| value);
-            assert_eq!(album, Some(&"Dark Side of the Moon".to_string()));
+            assert_eq!(album, Some(&"Classic Rock Hits".to_string()));
         }
 
         println!("✓ Album search test passed");
@@ -130,14 +130,14 @@ mod integration_tests {
             .expect("Failed to connect to test MPD");
 
         // Test playlist operations
-        let test_playlist = "test_integration_playlist";
+        let test_playlist = "jukebox";
         
         // Clean up any existing playlist
         let _ = mpd_conn.mpd.pl_remove(test_playlist);
 
         // Search for a song to add to playlist
         let mut query = Query::new();
-        query.and(Term::Tag("artist".into()), "Pink Floyd"); // Assuming this exists
+        query.and(Term::Tag("artist".into()), "The Test Rockers"); // Assuming this exists
         
         let songs = mpd_conn.mpd.search(&query, Some((0, 1)))
             .expect("Failed to search for test song");
