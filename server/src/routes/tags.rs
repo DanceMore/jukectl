@@ -80,9 +80,9 @@ async fn set_album_mode(
     // Update the album-aware setting
     locked_tags_data.album_aware = enabled;
     locked_song_queue.set_album_aware(enabled);
-    
-    println!("[+] album-aware mode toggled to: {}", enabled);
-    
+
+    println!("[+] album-aware mode set to: {}", enabled);
+
     // Regenerate the queue with the new mode
     let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
     locked_song_queue.shuffle_and_add(songs);
@@ -95,7 +95,34 @@ async fn set_album_mode(
     Json(response)
 }
 
+// Toggle album-aware mode
+#[post("/album-mode/toggle")]
+async fn toggle_album_mode(
+    app_state: &rocket::State<AppState>,
+) -> Json<serde_json::Value> {
+    let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+    let mut locked_song_queue = app_state.song_queue.write().await;
+    let mut locked_tags_data = app_state.tags_data.write().await;
+
+    // Toggle the album-aware setting
+    locked_tags_data.album_aware = !locked_tags_data.album_aware;
+    locked_song_queue.set_album_aware(locked_tags_data.album_aware);
+
+    println!("[+] album-aware mode toggled to: {}", locked_tags_data.album_aware);
+
+    // Regenerate the queue with the new mode
+    let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
+    locked_song_queue.shuffle_and_add(songs);
+
+    let response = serde_json::json!({
+        "album_aware": locked_tags_data.album_aware,
+        "message": if locked_tags_data.album_aware { "Album-aware mode enabled" } else { "Album-aware mode disabled" }
+    });
+
+    Json(response)
+}
+
 // Return routes defined in this module
 pub fn routes() -> Vec<rocket::Route> {
-    routes![tags, update_tags, set_album_mode]
+    routes![tags, update_tags, set_album_mode, toggle_album_mode]
 }
