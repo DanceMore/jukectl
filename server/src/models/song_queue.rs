@@ -1,6 +1,6 @@
 use rand::seq::SliceRandom;
-use std::collections::{HashMap, HashSet};
 use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use crate::models::hashable_song::HashableSong;
@@ -99,17 +99,20 @@ impl SongQueue {
 
     // NEW: Main shuffle method that uses caching intelligently
     pub fn shuffle_and_add_with_cache(
-        &mut self, 
-        tags_data: &crate::models::tags_data::TagsData, 
-        mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn
+        &mut self,
+        tags_data: &crate::models::tags_data::TagsData,
+        mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
     ) {
         let start_time = Instant::now();
-        
+
         // Get songs from appropriate cache or fetch fresh
         let songs = if self.album_aware {
             if let Some(ref cached) = self.album_cache {
                 if self.is_cache_valid() {
-                    println!("[+] Using cached album-aware songs ({} songs)", cached.len());
+                    println!(
+                        "[+] Using cached album-aware songs ({} songs)",
+                        cached.len()
+                    );
                     cached.clone()
                 } else {
                     println!("[+] Album cache expired, refreshing...");
@@ -153,7 +156,10 @@ impl SongQueue {
             self.shuffle_and_add_regular(songs);
         }
 
-        println!("[+] Cached shuffle_and_add took: {:?}", start_time.elapsed());
+        println!(
+            "[+] Cached shuffle_and_add took: {:?}",
+            start_time.elapsed()
+        );
     }
 
     // Keep the old method for backward compatibility
@@ -184,7 +190,8 @@ impl SongQueue {
 
     // Helper function to get a tag value from a song
     fn get_tag_value(song: &mpd::Song, tag_name: &str) -> Option<String> {
-        song.tags.iter()
+        song.tags
+            .iter()
             .find(|(key, _)| key == tag_name)
             .map(|(_, value)| value.clone())
     }
@@ -194,12 +201,12 @@ impl SongQueue {
         self.empty_queue();
 
         let mut albums: HashMap<String, Vec<mpd::Song>> = HashMap::new();
-        
+
         for hashable_song in songs {
             let song = mpd::Song::from(hashable_song);
-            let album_name = Self::get_tag_value(&song, "Album")
-                .unwrap_or_else(|| "Unknown Album".to_string());
-            
+            let album_name =
+                Self::get_tag_value(&song, "Album").unwrap_or_else(|| "Unknown Album".to_string());
+
             albums.entry(album_name).or_insert_with(Vec::new).push(song);
         }
 
@@ -214,8 +221,12 @@ impl SongQueue {
                     .unwrap_or(0);
                 track_a.cmp(&track_b)
             });
-            
-            println!("[+] sorted album '{}' with {} tracks", album_name, album_songs.len());
+
+            println!(
+                "[+] sorted album '{}' with {} tracks",
+                album_name,
+                album_songs.len()
+            );
         }
 
         // Shuffle the order of albums

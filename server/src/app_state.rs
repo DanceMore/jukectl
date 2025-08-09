@@ -10,7 +10,7 @@ pub struct AppState {
     pub mpd_conn: Arc<RwLock<MpdConn>>,
     pub song_queue: Arc<RwLock<SongQueue>>,
     pub tags_data: Arc<RwLock<TagsData>>,
-    pub album_aware: Arc<RwLock<bool>>,  // Album-aware mode flag
+    pub album_aware: Arc<RwLock<bool>>, // Album-aware mode flag
 }
 
 pub fn initialize() -> AppState {
@@ -45,9 +45,9 @@ pub async fn initialize_queue(state: &AppState) {
     let locked_album_aware = state.album_aware.read().await;
 
     println!("[+] Initializing song queue...");
-    
+
     locked_song_queue.set_album_aware(*locked_album_aware);
-    
+
     // Use the new caching method for initial queue setup
     // This will build the cache for the first time
     locked_song_queue.shuffle_and_add_with_cache(&*locked_tags_data, &mut *locked_mpd_conn);

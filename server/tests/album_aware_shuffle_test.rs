@@ -55,7 +55,8 @@ mod tests {
                         if let Some(album_name) = get_tag_value(&representative_song, "Album") {
                             println!("[+] expanding album: {}", album_name);
 
-                            let album_songs_result = self.get_songs_from_album(mpd_client, &album_name);
+                            let album_songs_result =
+                                self.get_songs_from_album(mpd_client, &album_name);
                             for song in album_songs_result {
                                 album_songs.insert(HashableSong(song));
                             }
@@ -71,7 +72,7 @@ mod tests {
     fn create_test_song(path: &str, album: &str, track: Option<u32>) -> Song {
         let mut song = Song::default();
         song.file = path.to_string();
-    
+
         // Add tags as Vec of (String, String) tuples
         let mut tags = vec![];
         tags.push(("Album".to_string(), album.to_string()));
@@ -79,10 +80,10 @@ mod tests {
             tags.push(("Track".to_string(), track_num.to_string()));
         }
         song.tags = tags;
-    
+
         song
     }
-    
+
     // Helper function to get tag value from Song
     fn get_tag_value(song: &Song, tag_name: &str) -> Option<String> {
         for (key, value) in &song.tags {
@@ -131,7 +132,11 @@ mod tests {
 
         // Test with MockTagsData
         let tags_data = MockTagsData {
-            album_tags: vec!["rock".to_string(), "jazz".to_string(), "electronic".to_string()],
+            album_tags: vec![
+                "rock".to_string(),
+                "jazz".to_string(),
+                "electronic".to_string(),
+            ],
         };
 
         // Get songs using the mock implementation
@@ -174,7 +179,10 @@ mod tests {
             // If we're still on the same album, verify track order
             if current_album == Some(album.clone()) {
                 if let (Some(current_track), Some(new_track)) = (last_track, track) {
-                    assert!(new_track > current_track, "Tracks should be in order within albums");
+                    assert!(
+                        new_track > current_track,
+                        "Tracks should be in order within albums"
+                    );
                 }
             } else {
                 // Album changed - reset track tracking
@@ -245,7 +253,10 @@ mod tests {
 
         // This is a basic check - in a real test we'd want to verify the actual ordering
         println!("Regular shuffle queue length: {}", regular_all.len());
-        println!("Album-aware shuffle queue length: {}", album_aware_all.len());
+        println!(
+            "Album-aware shuffle queue length: {}",
+            album_aware_all.len()
+        );
 
         assert_ne!(regular_all, album_aware_all, "Queues should be different");
     }

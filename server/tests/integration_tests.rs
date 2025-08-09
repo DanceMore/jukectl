@@ -22,26 +22,27 @@ mod integration_tests {
     // Helper to wait for MPD to be ready
     fn wait_for_mpd_ready(max_attempts: u32) -> Result<(), Box<dyn std::error::Error>> {
         for attempt in 1..=max_attempts {
-            println!("Attempting to connect to MPD (attempt {}/{})", attempt, max_attempts);
-            
+            println!(
+                "Attempting to connect to MPD (attempt {}/{})",
+                attempt, max_attempts
+            );
+
             match Client::connect("127.0.0.1:6600") {
-                Ok(mut client) => {
-                    match client.ping() {
-                        Ok(_) => {
-                            println!("MPD is ready!");
-                            return Ok(());
-                        }
-                        Err(e) => println!("MPD ping failed: {}", e),
+                Ok(mut client) => match client.ping() {
+                    Ok(_) => {
+                        println!("MPD is ready!");
+                        return Ok(());
                     }
-                }
+                    Err(e) => println!("MPD ping failed: {}", e),
+                },
                 Err(e) => println!("MPD connection failed: {}", e),
             }
-            
+
             if attempt < max_attempts {
                 thread::sleep(Duration::from_secs(2));
             }
         }
-        
+
         Err("MPD failed to become ready within timeout".into())
     }
 
@@ -59,7 +60,10 @@ mod integration_tests {
         not_query.and(Term::Tag("tag".into()), "not-allowed");
 
         let not_allowed_songs = mpd_conn.mpd.search(&not_query, None)?;
-        println!("Found {} songs with 'not-allowed' tag", not_allowed_songs.len());
+        println!(
+            "Found {} songs with 'not-allowed' tag",
+            not_allowed_songs.len()
+        );
 
         // Test tag filtering with exclusion logic
         let tags_data = TagsData {
@@ -71,7 +75,10 @@ mod integration_tests {
 
         // Should only include jukebox songs without "not-allowed" tag
         assert!(filtered_songs.len() < all_jukebox_songs.len());
-        assert_eq!(filtered_songs.len(), all_jukebox_songs.len() - not_allowed_songs.len());
+        assert_eq!(
+            filtered_songs.len(),
+            all_jukebox_songs.len() - not_allowed_songs.len()
+        );
 
         Ok(())
     }
@@ -85,11 +92,16 @@ mod integration_tests {
         let search_results = mpd_conn.mpd.search(&query, None)?;
         println!("Found {} songs in Unicode album", search_results.len());
 
-        assert!(!search_results.is_empty(), "Should find songs in Unicode album");
+        assert!(
+            !search_results.is_empty(),
+            "Should find songs in Unicode album"
+        );
 
         // Verify all songs have correct album name (Unicode)
         for song in &search_results {
-            let album = song.tags.iter()
+            let album = song
+                .tags
+                .iter()
                 .find(|(key, _)| key == "Album")
                 .map(|(_, value)| value);
             assert_eq!(album, Some(&"世界音楽 Collection".to_string()));
@@ -107,11 +119,16 @@ mod integration_tests {
         let search_results = mpd_conn.mpd.search(&query, None)?;
         println!("Found {} songs in long-named album", search_results.len());
 
-        assert!(!search_results.is_empty(), "Should find songs in long-named album");
+        assert!(
+            !search_results.is_empty(),
+            "Should find songs in long-named album"
+        );
 
         // Verify all songs have the correct (long) album name
         for song in &search_results {
-            let album = song.tags.iter()
+            let album = song
+                .tags
+                .iter()
                 .find(|(key, _)| key == "Album")
                 .map(|(_, value)| value);
             assert_eq!(album, Some(&"This Album Title Is Also Ridiculously Long And Contains Many Words That Describe Nothing Important But Test String Length Handling".to_string()));
@@ -121,19 +138,29 @@ mod integration_tests {
     }
 
     // Helper function to test minimal metadata handling
-    fn test_minimal_metadata_handling(mpd_conn: &mut MpdConn) -> Result<(), Box<dyn std::error::Error>> {
+    fn test_minimal_metadata_handling(
+        mpd_conn: &mut MpdConn,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Search for the album with minimal data
         let mut query = Query::new();
         query.and(Term::Tag("artist".into()), "Unknown");
 
         let search_results = mpd_conn.mpd.search(&query, None)?;
-        println!("Found {} songs in minimal metadata album", search_results.len());
+        println!(
+            "Found {} songs in minimal metadata album",
+            search_results.len()
+        );
 
-        assert!(!search_results.is_empty(), "Should find songs in minimal metadata album");
+        assert!(
+            !search_results.is_empty(),
+            "Should find songs in minimal metadata album"
+        );
 
         // Verify the songs have minimal data but are still functional
         for song in &search_results {
-            let artist = song.tags.iter()
+            let artist = song
+                .tags
+                .iter()
                 .find(|(key, _)| key == "Artist")
                 .map(|(_, value)| value);
             assert_eq!(artist, Some(&"Unknown".to_string()));
@@ -164,11 +191,21 @@ mod integration_tests {
         let search_results = mpd_conn.mpd.search(&query, None)?;
 
         let search_time = search_start.elapsed();
-        println!("Search found {} songs in {:?}", search_results.len(), search_time);
+        println!(
+            "Search found {} songs in {:?}",
+            search_results.len(),
+            search_time
+        );
 
         // Performance assertions
-        assert!(list_time.as_secs() < 10, "Library listing should complete within 10 seconds");
-        assert!(search_time.as_secs() < 5, "Search should complete within 5 seconds");
+        assert!(
+            list_time.as_secs() < 10,
+            "Library listing should complete within 10 seconds"
+        );
+        assert!(
+            search_time.as_secs() < 5,
+            "Search should complete within 5 seconds"
+        );
 
         Ok(())
     }
@@ -189,21 +226,20 @@ mod integration_tests {
     #[test]
     fn test_real_mpd_connection() {
         if !should_run_integration_tests() {
-            eprintln!("⏭️  SKIPPED: test_real_mpd_connection (set RUN_INTEGRATION_TESTS=1 to enable)");
+            eprintln!(
+                "⏭️  SKIPPED: test_real_mpd_connection (set RUN_INTEGRATION_TESTS=1 to enable)"
+            );
             return;
         }
 
         // Check if MPD is available (assumes it's already running)
-        check_mpd_available()
-            .expect("MPD container should be running before tests");
+        check_mpd_available().expect("MPD container should be running before tests");
 
         // Test basic connection
-        let mut mpd_conn = MpdConn::new()
-            .expect("Failed to connect to test MPD");
+        let mut mpd_conn = MpdConn::new().expect("Failed to connect to test MPD");
 
         // Test ping
-        mpd_conn.mpd.ping()
-            .expect("Failed to ping MPD");
+        mpd_conn.mpd.ping().expect("Failed to ping MPD");
 
         println!("✓ MPD connection test passed");
     }
@@ -211,31 +247,38 @@ mod integration_tests {
     #[test]
     fn test_real_album_search() {
         if !should_run_integration_tests() {
-            eprintln!("⏭️  SKIPPED: test_real_album_search (set RUN_INTEGRATION_TESTS=1 to enable)");
+            eprintln!(
+                "⏭️  SKIPPED: test_real_album_search (set RUN_INTEGRATION_TESTS=1 to enable)"
+            );
             return;
         }
 
-        check_mpd_available()
-            .expect("MPD container should be running before tests");
+        check_mpd_available().expect("MPD container should be running before tests");
 
-        let mut mpd_conn = MpdConn::new()
-            .expect("Failed to connect to test MPD");
+        let mut mpd_conn = MpdConn::new().expect("Failed to connect to test MPD");
 
         // Test album search functionality
         let mut query = Query::new();
         query.and(Term::Tag("album".into()), "Classic Rock Hits"); // Assuming this exists in test data
-        
-        let search_results = mpd_conn.mpd.search(&query, None)
+
+        let search_results = mpd_conn
+            .mpd
+            .search(&query, None)
             .expect("Failed to search for album");
 
         println!("Found {} songs in album", search_results.len());
-        
+
         // Verify we got results
-        assert!(!search_results.is_empty(), "Should find songs in test album");
-        
+        assert!(
+            !search_results.is_empty(),
+            "Should find songs in test album"
+        );
+
         // Verify all songs are from the same album
         for song in &search_results {
-            let album = song.tags.iter()
+            let album = song
+                .tags
+                .iter()
                 .find(|(key, _)| key == "Album")
                 .map(|(_, value)| value);
             assert_eq!(album, Some(&"Classic Rock Hits".to_string()));
@@ -251,41 +294,47 @@ mod integration_tests {
             return;
         }
 
-        check_mpd_available()
-            .expect("MPD container should be running before tests");
+        check_mpd_available().expect("MPD container should be running before tests");
 
-        let mut mpd_conn = MpdConn::new()
-            .expect("Failed to connect to test MPD");
+        let mut mpd_conn = MpdConn::new().expect("Failed to connect to test MPD");
 
         // Test playlist operations
         let test_playlist = "jukebox";
-        
+
         // Clean up any existing playlist
         let _ = mpd_conn.mpd.pl_remove(test_playlist);
 
         // Search for a song to add to playlist
         let mut query = Query::new();
         query.and(Term::Tag("artist".into()), "The Test Rockers"); // Assuming this exists
-        
-        let songs = mpd_conn.mpd.search(&query, Some((0, 1)))
+
+        let songs = mpd_conn
+            .mpd
+            .search(&query, Some((0, 1)))
             .expect("Failed to search for test song");
-        
+
         assert!(!songs.is_empty(), "Should find at least one test song");
         let test_song = &songs[0];
 
         // Create playlist and add song
-        mpd_conn.mpd.pl_push(test_playlist, test_song.clone())
+        mpd_conn
+            .mpd
+            .pl_push(test_playlist, test_song.clone())
             .expect("Failed to add song to playlist");
 
         // Verify playlist contents
-        let playlist_songs = mpd_conn.mpd.playlist(test_playlist)
+        let playlist_songs = mpd_conn
+            .mpd
+            .playlist(test_playlist)
             .expect("Failed to get playlist");
-        
+
         assert_eq!(playlist_songs.len(), 1);
         assert_eq!(playlist_songs[0].file, test_song.file);
 
         // Clean up
-        mpd_conn.mpd.pl_remove(test_playlist)
+        mpd_conn
+            .mpd
+            .pl_remove(test_playlist)
             .expect("Failed to remove test playlist");
 
         println!("✓ Playlist operations test passed");
@@ -298,11 +347,9 @@ mod integration_tests {
             return;
         }
 
-        check_mpd_available()
-            .expect("MPD container should be running before tests");
+        check_mpd_available().expect("MPD container should be running before tests");
 
-        let mut mpd_conn = MpdConn::new()
-            .expect("Failed to connect to test MPD");
+        let mut mpd_conn = MpdConn::new().expect("Failed to connect to test MPD");
 
         // Set up test data - create playlists with album representatives
         let rock_playlist = "test_rock";
@@ -315,23 +362,31 @@ mod integration_tests {
         // Find some rock songs (assuming your test data has these)
         let mut rock_query = Query::new();
         rock_query.and(Term::Tag("genre".into()), "Rock");
-        let rock_songs = mpd_conn.mpd.search(&rock_query, Some((0, 5)))
+        let rock_songs = mpd_conn
+            .mpd
+            .search(&rock_query, Some((0, 5)))
             .expect("Failed to find rock songs");
 
         // Find some jazz songs
         let mut jazz_query = Query::new();
         jazz_query.and(Term::Tag("genre".into()), "Jazz");
-        let jazz_songs = mpd_conn.mpd.search(&jazz_query, Some((0, 5)))
+        let jazz_songs = mpd_conn
+            .mpd
+            .search(&jazz_query, Some((0, 5)))
             .expect("Failed to find jazz songs");
 
         // Add representative songs to playlists
         if !rock_songs.is_empty() {
-            mpd_conn.mpd.pl_push(rock_playlist, rock_songs[0].clone())
+            mpd_conn
+                .mpd
+                .pl_push(rock_playlist, rock_songs[0].clone())
                 .expect("Failed to add rock song to playlist");
         }
 
         if !jazz_songs.is_empty() {
-            mpd_conn.mpd.pl_push(jazz_playlist, jazz_songs[0].clone())
+            mpd_conn
+                .mpd
+                .pl_push(jazz_playlist, jazz_songs[0].clone())
                 .expect("Failed to add jazz song to playlist");
         }
 
@@ -342,10 +397,10 @@ mod integration_tests {
         };
 
         let album_songs = tags_data.get_album_aware_songs(&mut mpd_conn);
-        
+
         // Should get full albums, not just representative songs
         println!("Found {} songs using album-aware mode", album_songs.len());
-        
+
         // Test with SongQueue
         let mut queue = SongQueue::new();
         queue.set_album_aware(true);
@@ -363,23 +418,22 @@ mod integration_tests {
     #[test]
     fn test_stress_large_library() {
         if !should_run_integration_tests() {
-            eprintln!("⏭️  SKIPPED: test_stress_large_library (set RUN_INTEGRATION_TESTS=1 to enable)");
+            eprintln!(
+                "⏭️  SKIPPED: test_stress_large_library (set RUN_INTEGRATION_TESTS=1 to enable)"
+            );
             return;
         }
 
-        check_mpd_available()
-            .expect("MPD container should be running before tests");
+        check_mpd_available().expect("MPD container should be running before tests");
 
-        let mut mpd_conn = MpdConn::new()
-            .expect("Failed to connect to test MPD");
+        let mut mpd_conn = MpdConn::new().expect("Failed to connect to test MPD");
 
         // Test performance with larger datasets
         let start_time = std::time::Instant::now();
-        
+
         // Search for all songs
-        let all_songs = mpd_conn.mpd.listall()
-            .expect("Failed to list all songs");
-        
+        let all_songs = mpd_conn.mpd.listall().expect("Failed to list all songs");
+
         let list_time = start_time.elapsed();
         println!("Listed {} songs in {:?}", all_songs.len(), list_time);
 
@@ -387,16 +441,28 @@ mod integration_tests {
         let search_start = std::time::Instant::now();
         let mut query = Query::new();
         query.and(Term::Any, "the"); // Common word
-        
-        let search_results = mpd_conn.mpd.search(&query, None)
+
+        let search_results = mpd_conn
+            .mpd
+            .search(&query, None)
             .expect("Failed to perform search");
-        
+
         let search_time = search_start.elapsed();
-        println!("Search found {} songs in {:?}", search_results.len(), search_time);
+        println!(
+            "Search found {} songs in {:?}",
+            search_results.len(),
+            search_time
+        );
 
         // Performance assertions
-        assert!(list_time.as_secs() < 10, "Library listing should complete within 10 seconds");
-        assert!(search_time.as_secs() < 5, "Search should complete within 5 seconds");
+        assert!(
+            list_time.as_secs() < 10,
+            "Library listing should complete within 10 seconds"
+        );
+        assert!(
+            search_time.as_secs() < 5,
+            "Search should complete within 5 seconds"
+        );
 
         println!("✓ Stress test passed");
     }

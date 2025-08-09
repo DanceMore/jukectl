@@ -48,7 +48,7 @@ async fn update_tags(
     }
     if let Some(not) = &tags_update.not {
         locked_tags_data.not = not.clone();
-        // Tags changed, invalidate cache for fresh results  
+        // Tags changed, invalidate cache for fresh results
         locked_song_queue.invalidate_cache();
     }
 
@@ -85,10 +85,10 @@ async fn set_album_mode(
     let mut locked_album_aware = app_state.album_aware.write().await;
 
     *locked_album_aware = enabled;
-    
+
     // This will invalidate cache if mode actually changed
     locked_song_queue.set_album_aware(enabled);
-    
+
     println!("[+] album-aware mode set to: {}", enabled);
 
     // Use caching for instant response (or very fast cache refresh)
@@ -103,19 +103,17 @@ async fn set_album_mode(
 }
 
 #[post("/album-mode/toggle")]
-async fn toggle_album_mode(
-    app_state: &rocket::State<AppState>,
-) -> Json<serde_json::Value> {
+async fn toggle_album_mode(app_state: &rocket::State<AppState>) -> Json<serde_json::Value> {
     let mut locked_mpd_conn = app_state.mpd_conn.write().await;
     let mut locked_song_queue = app_state.song_queue.write().await;
     let locked_tags_data = app_state.tags_data.read().await;
     let mut locked_album_aware = app_state.album_aware.write().await;
 
     *locked_album_aware = !*locked_album_aware;
-    
+
     // This will invalidate cache if mode actually changed
     locked_song_queue.set_album_aware(*locked_album_aware);
-    
+
     println!("[+] album-aware mode toggled to: {}", *locked_album_aware);
 
     // Use caching for instant response
