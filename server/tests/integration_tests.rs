@@ -45,6 +45,134 @@ mod integration_tests {
         Err("MPD failed to become ready within timeout".into())
     }
 
+    // Helper function to test "not" tags filtering
+    fn test_not_tags_filtering(mpd_conn: &mut MpdConn) -> Result<(), Box<dyn std::error::Error>> {
+        // First, search for all songs with "jukebox" tag
+        let mut query = Query::new();
+        query.and(Term::Tag("tag".into()), "jukebox");
+
+        let all_jukebox_songs = mpd_conn.mpd.search(&query, None)?;
+        println!("Found {} jukebox songs total", all_jukebox_songs.len());
+
+        // Now search specifically for songs with both "jukebox" and "not-allowed" tags
+        let mut not_query = Query::new();
+        not_query.and(Term::Tag("tag".into()), "not-allowed");
+
+        let not_allowed_songs = mpd_conn.mpd.search(&not_query, None)?;
+        println!("Found {} songs with 'not-allowed' tag", not_allowed_songs.len());
+
+        // Test tag filtering with exclusion logic
+        let tags_data = TagsData {
+            any: vec!["jukebox".to_string()],
+            not: vec!["not-allowed".to_string()],
+        };
+
+        let filtered_songs = tags_data.get_allowed_songs(mpd_conn);
+
+        // Should only include jukebox songs without "not-allowed" tag
+        assert!(filtered_songs.len() < all_jukebox_songs.len());
+        assert_eq!(filtered_songs.len(), all_jukebox_songs.len() - not_allowed_songs.len());
+
+        Ok(())
+    }
+
+    // Helper function to test Unicode handling
+    fn test_unicode_handling(mpd_conn: &mut MpdConn) -> Result<(), Box<dyn std::error::Error>> {
+        // Search for the Unicode album
+        let mut query = Query::new();
+        query.and(Term::Tag("album".into()), "世界音楽 Collection");
+
+        let search_results = mpd_conn.mpd.search(&query, None)?;
+        println!("Found {} songs in Unicode album", search_results.len());
+
+        assert!(!search_results.is_empty(), "Should find songs in Unicode album");
+
+        // Verify all songs have correct album name (Unicode)
+        for song in &search_results {
+            let album = song.tags.iter()
+                .find(|(key, _)| key == "Album")
+                .map(|(_, value)| value);
+            assert_eq!(album, Some(&"世界音楽 Collection".to_string()));
+        }
+
+        Ok(())
+    }
+
+    // Helper function to test long names handling
+    fn test_long_names_handling(mpd_conn: &mut MpdConn) -> Result<(), Box<dyn std::error::Error>> {
+        // Search for the album with long names
+        let mut query = Query::new();
+        query.and(Term::Tag("album".into()), "This Album Title Is Also Ridiculously Long And Contains Many Words That Describe Nothing Important But Test String Length Handling");
+
+        let search_results = mpd_conn.mpd.search(&query, None)?;
+        println!("Found {} songs in long-named album", search_results.len());
+
+        assert!(!search_results.is_empty(), "Should find songs in long-named album");
+
+        // Verify all songs have the correct (long) album name
+        for song in &search_results {
+            let album = song.tags.iter()
+                .find(|(key, _)| key == "Album")
+                .map(|(_, value)| value);
+            assert_eq!(album, Some(&"This Album Title Is Also Ridiculously Long And Contains Many Words That Describe Nothing Important But Test String Length Handling".to_string()));
+        }
+
+        Ok(())
+    }
+
+    // Helper function to test minimal metadata handling
+    fn test_minimal_metadata_handling(mpd_conn: &mut MpdConn) -> Result<(), Box<dyn std::error::Error>> {
+        // Search for the album with minimal data
+        let mut query = Query::new();
+        query.and(Term::Tag("artist".into()), "Unknown");
+
+        let search_results = mpd_conn.mpd.search(&query, None)?;
+        println!("Found {} songs in minimal metadata album", search_results.len());
+
+        assert!(!search_results.is_empty(), "Should find songs in minimal metadata album");
+
+        // Verify the songs have minimal data but are still functional
+        for song in &search_results {
+            let artist = song.tags.iter()
+                .find(|(key, _)| key == "Artist")
+                .map(|(_, value)| value);
+            assert_eq!(artist, Some(&"Unknown".to_string()));
+
+            // Album should be empty string but file path should exist
+            assert!(song.file.contains("/"), "Song file path should be valid");
+        }
+
+        Ok(())
+    }
+
+    // Helper function to test stress conditions with large datasets
+    fn test_stress_large_library(mpd_conn: &mut MpdConn) -> Result<(), Box<dyn std::error::Error>> {
+        // Test performance with larger datasets
+        let start_time = std::time::Instant::now();
+
+        // Search for all songs
+        let all_songs = mpd_conn.mpd.listall()?;
+
+        let list_time = start_time.elapsed();
+        println!("Listed {} songs in {:?}", all_songs.len(), list_time);
+
+        // Test search performance
+        let search_start = std::time::Instant::now();
+        let mut query = Query::new();
+        query.and(Term::Any, "the"); // Common word
+
+        let search_results = mpd_conn.mpd.search(&query, None)?;
+
+        let search_time = search_start.elapsed();
+        println!("Search found {} songs in {:?}", search_results.len(), search_time);
+
+        // Performance assertions
+        assert!(list_time.as_secs() < 10, "Library listing should complete within 10 seconds");
+        assert!(search_time.as_secs() < 5, "Search should complete within 5 seconds");
+
+        Ok(())
+    }
+
     // Helper to check if MPD is available (assumes it's already running)
     fn check_mpd_available() -> Result<(), Box<dyn std::error::Error>> {
         match wait_for_mpd_ready(3) {
@@ -211,11 +339,9 @@ mod integration_tests {
         let tags_data = TagsData {
             any: vec![],
             not: vec![],
-            album_aware: true,
-            album_tags: vec![rock_playlist.to_string(), jazz_playlist.to_string()],
         };
 
-        let album_songs = tags_data.get_allowed_songs(&mut mpd_conn);
+        let album_songs = tags_data.get_album_aware_songs(&mut mpd_conn);
         
         // Should get full albums, not just representative songs
         println!("Found {} songs using album-aware mode", album_songs.len());

@@ -17,12 +17,17 @@ async fn scheduler_mainbody(app_state: AppState) {
         let mut locked_mpd_conn = app_state.mpd_conn.write().await;
         let mut locked_song_queue = app_state.song_queue.write().await;
         let locked_tags_data = app_state.tags_data.read().await;
+        let locked_album_aware = app_state.album_aware.read().await;
 
         // make sure SongQueue is not empty
         if locked_song_queue.len() == 0 {
             info!("[!] scheduler sees an empty queue, refilling...");
-            // If song_queue is empty, fetch songs and add them
-            let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
+            // If song_queue is empty, fetch songs and add them based on album-aware mode
+            let songs = if *locked_album_aware {
+                locked_tags_data.get_album_aware_songs(&mut locked_mpd_conn)
+            } else {
+                locked_tags_data.get_allowed_songs(&mut locked_mpd_conn)
+            };
             locked_song_queue.shuffle_and_add(songs);
         }
 
