@@ -5,10 +5,23 @@ use serde::Serialize;
 use crate::app_state::AppState;
 use jukectl_server::models::tags_data::TagsData;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagsResponse {
+    pub any: Vec<String>,
+    pub not: Vec<String>,
+    pub album_aware: bool,
+}
+
 #[get("/tags")]
-async fn tags(app_state: &rocket::State<AppState>) -> Json<TagsData> {
+async fn tags(app_state: &rocket::State<AppState>) -> Json<TagsResponse> {
     let read_guard = app_state.tags_data.read().await;
-    Json(read_guard.clone())
+    let album_aware = *app_state.album_aware.read().await;
+
+    Json(TagsResponse {
+        any: read_guard.any.clone(),
+        not: read_guard.not.clone(),
+        album_aware,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,8 +88,9 @@ async fn set_album_mode(
     let mut locked_song_queue = app_state.song_queue.write().await;
     let locked_tags_data = app_state.tags_data.read().await;
 
-    // TODO: this probably does need to be mutable, why aren't we updating it? we only update song_queue ???
+    // Update the album-aware setting in AppState
     let mut locked_album_aware = app_state.album_aware.write().await;
+    *locked_album_aware = enabled;  // Actually update the state
 
     // Update the song queue with new settings
     locked_song_queue.set_album_aware(enabled);
@@ -109,8 +123,9 @@ async fn toggle_album_mode(
     let mut locked_song_queue = app_state.song_queue.write().await;
     let locked_tags_data = app_state.tags_data.read().await;
 
-    // TODO: this probably DOES need to be mutable, why are we not toggling app_state.album_aware and only touching song_queue again
+    // Toggle the album-aware setting in AppState
     let mut locked_album_aware = app_state.album_aware.write().await;
+    *locked_album_aware = !*locked_album_aware;  // Actually toggle the state
 
     // Update the song queue with new settings
     locked_song_queue.set_album_aware(*locked_album_aware);
