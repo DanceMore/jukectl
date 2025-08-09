@@ -5,16 +5,48 @@ use std::net::ToSocketAddrs;
 pub struct MpdConn {
     pub mpd: Client,
     address: Vec<std::net::SocketAddr>,
+    // Store original host/port for parallel task creation
+    host: String,
+    port: u16,
 }
 
 impl MpdConn {
     pub fn new() -> Result<Self> {
         println!("[!] connecting to mpd...");
-        let (mpd, address) = MpdConn::connect_mpd()?;
-        Ok(MpdConn { mpd, address })
+        let (mpd, address, host, port) = MpdConn::connect_mpd()?;
+        Ok(MpdConn { mpd, address, host, port })
     }
 
-    fn connect_mpd() -> Result<(Client, Vec<std::net::SocketAddr>)> {
+    // New method for creating connections with specific host/port
+    pub fn new_with_host(host: &str, port: u16) -> Result<Self> {
+        println!("[!] connecting to mpd at {}:{}...", host, port);
+        
+        // Resolve the host and port
+        let address = (host, port)
+            .to_socket_addrs()
+            .map_err(|e| mpd::error::Error::Io(e))?
+            .collect::<Vec<std::net::SocketAddr>>();
+
+        // Create an MPD client and connect using the resolved address
+        let mut mpd = Client::connect(address[0])?;
+
+        // Set consume to true as part of Jukectl
+        mpd.consume(true)?;
+
+        Ok(MpdConn { 
+            mpd, 
+            address, 
+            host: host.to_string(), 
+            port 
+        })
+    }
+
+    // Method to expose connection info for parallel tasks
+    pub fn get_host_info(&self) -> (String, u16) {
+        (self.host.clone(), self.port)
+    }
+
+    fn connect_mpd() -> Result<(Client, Vec<std::net::SocketAddr>, String, u16)> {
         // Get environment variables for MPD configuration
         let host = env::var("MPD_HOST").unwrap_or_else(|_| "localhost".to_string());
         let port: u16 = env::var("MPD_PORT")
@@ -34,7 +66,7 @@ impl MpdConn {
         // Set consume to true as part of Jukectl
         mpd.consume(true)?;
 
-        Ok((mpd, address))
+        Ok((mpd, address, host, port))
     }
 
     pub fn reconnect(&mut self) -> Result<()> {

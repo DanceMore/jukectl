@@ -28,7 +28,6 @@ async fn tags(app_state: &rocket::State<AppState>) -> Json<TagsResponse> {
 pub struct TagsUpdate {
     pub any: Option<Vec<String>>,
     pub not: Option<Vec<String>>,
-    // album_aware and album_tags removed as they are now in AppState
 }
 
 #[post("/tags", data = "<tags_update>")]
@@ -43,12 +42,10 @@ async fn update_tags(
     // Check if 'any' and 'not' fields are present and update them if needed
     if let Some(any) = &tags_update.any {
         locked_tags_data.any = any.clone();
-        // Tags changed, invalidate cache for fresh results
         locked_song_queue.invalidate_cache();
     }
     if let Some(not) = &tags_update.not {
         locked_tags_data.not = not.clone();
-        // Tags changed, invalidate cache for fresh results
         locked_song_queue.invalidate_cache();
     }
 
@@ -63,8 +60,12 @@ async fn update_tags(
         locked_song_queue.invalidate_cache();
     }
 
-    // Use the new caching method for excellent performance
-    locked_song_queue.shuffle_and_add_with_cache(&*locked_tags_data, &mut *locked_mpd_conn);
+    // Use the ultra-fast async method with parallel album expansion
+    locked_song_queue.shuffle_and_add_with_cache_async(&*locked_tags_data, &mut *locked_mpd_conn).await;
+
+    // Request background precompute for the opposite mode
+    let current_album_aware = *app_state.album_aware.read().await;
+    locked_song_queue.request_precompute(!current_album_aware);
 
     let res = locked_tags_data.clone();
     drop(locked_mpd_conn);
@@ -85,14 +86,15 @@ async fn set_album_mode(
     let mut locked_album_aware = app_state.album_aware.write().await;
 
     *locked_album_aware = enabled;
-
-    // This will invalidate cache if mode actually changed
     locked_song_queue.set_album_aware(enabled);
 
     println!("[+] album-aware mode set to: {}", enabled);
 
-    // Use caching for instant response (or very fast cache refresh)
-    locked_song_queue.shuffle_and_add_with_cache(&*locked_tags_data, &mut *locked_mpd_conn);
+    // Use async method for instant response with parallel processing
+    locked_song_queue.shuffle_and_add_with_cache_async(&*locked_tags_data, &mut *locked_mpd_conn).await;
+
+    // Request background precompute for the opposite mode to keep both caches fresh
+    locked_song_queue.request_precompute(!enabled);
 
     let response = serde_json::json!({
         "album_aware": enabled,
@@ -110,14 +112,15 @@ async fn toggle_album_mode(app_state: &rocket::State<AppState>) -> Json<serde_js
     let mut locked_album_aware = app_state.album_aware.write().await;
 
     *locked_album_aware = !*locked_album_aware;
-
-    // This will invalidate cache if mode actually changed
     locked_song_queue.set_album_aware(*locked_album_aware);
 
     println!("[+] album-aware mode toggled to: {}", *locked_album_aware);
 
-    // Use caching for instant response
-    locked_song_queue.shuffle_and_add_with_cache(&*locked_tags_data, &mut *locked_mpd_conn);
+    // Use async method for blazing fast response
+    locked_song_queue.shuffle_and_add_with_cache_async(&*locked_tags_data, &mut *locked_mpd_conn).await;
+
+    // Keep both cache types fresh
+    locked_song_queue.request_precompute(!*locked_album_aware);
 
     let response = serde_json::json!({
         "album_aware": *locked_album_aware,
@@ -127,7 +130,51 @@ async fn toggle_album_mode(app_state: &rocket::State<AppState>) -> Json<serde_js
     Json(response)
 }
 
+// New endpoint for cache statistics and health monitoring
+#[get("/cache-stats")]
+async fn cache_stats(app_state: &rocket::State<AppState>) -> Json<serde_json::Value> {
+    let locked_song_queue = app_state.song_queue.read().await;
+    let locked_tags_data = app_state.tags_data.read().await;
+    
+    let (hits, misses, hit_rate) = locked_song_queue.cache_stats();
+    let (regular_valid, album_valid) = locked_song_queue.has_valid_cache(&*locked_tags_data);
+    let queue_length = locked_song_queue.len();
+    
+    Json(serde_json::json!({
+        "cache_hits": hits,
+        "cache_misses": misses,
+        "hit_rate_percent": hit_rate,
+        "regular_cache_valid": regular_valid,
+        "album_cache_valid": album_valid,
+        "queue_length": queue_length,
+        "status": if hit_rate > 80.0 { "excellent" } else if hit_rate > 60.0 { "good" } else { "needs_optimization" }
+    }))
+}
+
+// New endpoint to force cache refresh (for testing/admin)
+#[post("/cache/refresh")]
+async fn refresh_cache(app_state: &rocket::State<AppState>) -> Json<serde_json::Value> {
+    let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+    let mut locked_song_queue = app_state.song_queue.write().await;
+    let locked_tags_data = app_state.tags_data.read().await;
+    
+    println!("[+] Manual cache refresh requested");
+    let start_time = std::time::Instant::now();
+    
+    // Invalidate and rebuild both caches
+    locked_song_queue.invalidate_cache();
+    locked_song_queue.background_precompute(&*locked_tags_data, &mut *locked_mpd_conn).await;
+    
+    let elapsed = start_time.elapsed();
+    
+    Json(serde_json::json!({
+        "status": "success",
+        "refresh_time_ms": elapsed.as_millis(),
+        "message": "Cache refreshed successfully"
+    }))
+}
+
 // Return routes defined in this module
 pub fn routes() -> Vec<rocket::Route> {
-    routes![tags, update_tags, set_album_mode, toggle_album_mode]
+    routes![tags, update_tags, set_album_mode, toggle_album_mode, cache_stats, refresh_cache]
 }
