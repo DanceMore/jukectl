@@ -1059,6 +1059,7 @@ dependencies = [
  "serde",
  "serde_json",
  "test-log",
+ "tokio",
  "tokio-test",
 ]
 

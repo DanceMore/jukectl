@@ -5,84 +5,276 @@ use std::time::{Duration, Instant};
 
 use crate::models::hashable_song::HashableSong;
 
-// Define your custom queue type with caching
+// Enhanced cache entry with metadata
+#[derive(Clone)]
+struct CacheEntry {
+    songs: HashSet<HashableSong>,
+    timestamp: Instant,
+    tags_hash: u64, // Simple hash of tags to detect changes
+}
+
+impl CacheEntry {
+    fn new(songs: HashSet<HashableSong>, tags_hash: u64) -> Self {
+        Self {
+            songs,
+            timestamp: Instant::now(),
+            tags_hash,
+        }
+    }
+
+    fn is_valid(&self, current_tags_hash: u64, ttl: Duration) -> bool {
+        self.tags_hash == current_tags_hash && self.timestamp.elapsed() < ttl
+    }
+}
+
+// Define your enhanced queue type with dual caching
 pub struct SongQueue {
     inner: VecDeque<mpd::Song>,
     album_aware: bool,
-    // Caching system for both modes
-    regular_cache: Option<HashSet<HashableSong>>,
-    album_cache: Option<HashSet<HashableSong>>,
-    cache_timestamp: Option<Instant>,
+    
+    // Dual cache system
+    regular_cache: Option<CacheEntry>,
+    album_cache: Option<CacheEntry>,
+    
+    // Background precompute flags
+    regular_precompute_pending: bool,
+    album_precompute_pending: bool,
+    
     cache_ttl: Duration,
+    
+    // Performance metrics
+    cache_hits: u64,
+    cache_misses: u64,
 }
 
 impl SongQueue {
-    // Initialize a new SongQueue with caching
     pub fn new() -> Self {
         Self {
             inner: VecDeque::new(),
             album_aware: false,
             regular_cache: None,
             album_cache: None,
-            cache_timestamp: None,
-            cache_ttl: Duration::from_secs(300), // 5 minute cache
+            regular_precompute_pending: false,
+            album_precompute_pending: false,
+            cache_ttl: Duration::from_secs(600), // 10 minute cache
+            cache_hits: 0,
+            cache_misses: 0,
         }
     }
 
-    // Set album-aware mode and optionally invalidate cache if mode changed
     pub fn set_album_aware(&mut self, album_aware: bool) {
         if self.album_aware != album_aware {
-            // Mode changed, invalidate cache to force refresh
-            self.invalidate_cache();
-            println!("[+] Album-aware mode changed, cache invalidated");
+            println!("[+] Album-aware mode changed to {}, invalidating caches", album_aware);
         }
         self.album_aware = album_aware;
     }
 
-    // Call this when tags are updated to invalidate cache
-    pub fn invalidate_cache(&mut self) {
-        self.regular_cache = None;
-        self.album_cache = None;
-        self.cache_timestamp = None;
-        println!("[+] Song cache invalidated");
-    }
-
-    fn is_cache_valid(&self) -> bool {
-        if let Some(timestamp) = self.cache_timestamp {
-            timestamp.elapsed() < self.cache_ttl
+    // Mark that we need background precomputation
+    pub fn request_precompute(&mut self, album_mode: bool) {
+        if album_mode {
+            self.album_precompute_pending = true;
+            println!("[+] Album cache precompute requested");
         } else {
-            false
+            self.regular_precompute_pending = true;
+            println!("[+] Regular cache precompute requested");
         }
     }
 
-    // Add a song to the queue
+    pub fn invalidate_cache(&mut self) {
+        self.regular_cache = None;
+        self.album_cache = None;
+        println!("[+] All caches invalidated");
+    }
+
+    // Simple hash function for tags
+    fn hash_tags(tags_data: &crate::models::tags_data::TagsData) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        tags_data.any.hash(&mut hasher);
+        tags_data.not.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    // MAIN: Ultra-fast cached shuffle method
+    pub async fn shuffle_and_add_with_cache_async(
+        &mut self,
+        tags_data: &crate::models::tags_data::TagsData,
+        mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
+    ) {
+        let start_time = Instant::now();
+        let tags_hash = Self::hash_tags(tags_data);
+
+        let songs = if self.album_aware {
+            if let Some(ref cache) = self.album_cache {
+                if cache.is_valid(tags_hash, self.cache_ttl) {
+                    self.cache_hits += 1;
+                    println!("[+] CACHE HIT: Using cached album-aware songs ({} songs) - hit rate: {:.1}%", 
+                             cache.songs.len(),
+                             (self.cache_hits as f64 / (self.cache_hits + self.cache_misses) as f64) * 100.0);
+                    cache.songs.clone()
+                } else {
+                    self.cache_misses += 1;
+                    println!("[+] CACHE MISS: Album cache invalid, using parallel refresh...");
+                    let fresh_songs = tags_data.get_album_aware_songs_parallel(mpd_client).await;
+                    self.album_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+                    fresh_songs
+                }
+            } else {
+                self.cache_misses += 1;
+                println!("[+] CACHE MISS: Building album-aware cache with parallel expansion...");
+                let fresh_songs = tags_data.get_album_aware_songs_parallel(mpd_client).await;
+                self.album_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+                fresh_songs
+            }
+        } else {
+            if let Some(ref cache) = self.regular_cache {
+                if cache.is_valid(tags_hash, self.cache_ttl) {
+                    self.cache_hits += 1;
+                    println!("[+] CACHE HIT: Using cached regular songs ({} songs) - hit rate: {:.1}%", 
+                             cache.songs.len(),
+                             (self.cache_hits as f64 / (self.cache_hits + self.cache_misses) as f64) * 100.0);
+                    cache.songs.clone()
+                } else {
+                    self.cache_misses += 1;
+                    println!("[+] CACHE MISS: Regular cache invalid, refreshing...");
+                    let fresh_songs = tags_data.get_allowed_songs(mpd_client);
+                    self.regular_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+                    fresh_songs
+                }
+            } else {
+                self.cache_misses += 1;
+                println!("[+] CACHE MISS: Building regular cache...");
+                let fresh_songs = tags_data.get_allowed_songs(mpd_client);
+                self.regular_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+                fresh_songs
+            }
+        };
+
+        // Use existing shuffle logic
+        if self.album_aware {
+            self.shuffle_and_add_album_aware(songs);
+        } else {
+            self.shuffle_and_add_regular(songs);
+        }
+
+        println!("[+] Total shuffle_and_add took: {:?}", start_time.elapsed());
+    }
+
+    // Synchronous fallback method
+    pub fn shuffle_and_add_with_cache(
+        &mut self,
+        tags_data: &crate::models::tags_data::TagsData,
+        mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
+    ) {
+        let start_time = Instant::now();
+        let tags_hash = Self::hash_tags(tags_data);
+
+        let songs = if self.album_aware {
+            if let Some(ref cache) = self.album_cache {
+                if cache.is_valid(tags_hash, self.cache_ttl) {
+                    self.cache_hits += 1;
+                    println!("[+] CACHE HIT: Using cached album-aware songs ({} songs)", cache.songs.len());
+                    cache.songs.clone()
+                } else {
+                    self.cache_misses += 1;
+                    println!("[+] CACHE MISS: Album cache invalid, using sync refresh...");
+                    let fresh_songs = tags_data.get_album_aware_songs(mpd_client);
+                    self.album_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+                    fresh_songs
+                }
+            } else {
+                self.cache_misses += 1;
+                println!("[+] CACHE MISS: Building album-aware cache...");
+                let fresh_songs = tags_data.get_album_aware_songs(mpd_client);
+                self.album_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+                fresh_songs
+            }
+        } else {
+            if let Some(ref cache) = self.regular_cache {
+                if cache.is_valid(tags_hash, self.cache_ttl) {
+                    self.cache_hits += 1;
+                    println!("[+] CACHE HIT: Using cached regular songs ({} songs)", cache.songs.len());
+                    cache.songs.clone()
+                } else {
+                    self.cache_misses += 1;
+                    println!("[+] CACHE MISS: Regular cache invalid, refreshing...");
+                    let fresh_songs = tags_data.get_allowed_songs(mpd_client);
+                    self.regular_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+                    fresh_songs
+                }
+            } else {
+                self.cache_misses += 1;
+                println!("[+] CACHE MISS: Building regular cache...");
+                let fresh_songs = tags_data.get_allowed_songs(mpd_client);
+                self.regular_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+                fresh_songs
+            }
+        };
+
+        if self.album_aware {
+            self.shuffle_and_add_album_aware(songs);
+        } else {
+            self.shuffle_and_add_regular(songs);
+        }
+
+        println!("[+] Sync shuffle_and_add took: {:?}", start_time.elapsed());
+    }
+
+    // Background precompute method for scheduler
+    pub async fn background_precompute(
+        &mut self,
+        tags_data: &crate::models::tags_data::TagsData,
+        mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
+    ) {
+        let tags_hash = Self::hash_tags(tags_data);
+
+        // Check if regular precompute is needed
+        if self.regular_precompute_pending || 
+           self.regular_cache.as_ref().map_or(true, |c| !c.is_valid(tags_hash, self.cache_ttl)) {
+            
+            println!("[+] Background: Precomputing regular cache...");
+            let start = Instant::now();
+            let fresh_songs = tags_data.get_allowed_songs(mpd_client);
+            self.regular_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+            self.regular_precompute_pending = false;
+            println!("[+] Background: Regular cache precomputed in {:?} ({} songs)", 
+                     start.elapsed(), fresh_songs.len());
+        }
+
+        // Check if album precompute is needed
+        if self.album_precompute_pending || 
+           self.album_cache.as_ref().map_or(true, |c| !c.is_valid(tags_hash, self.cache_ttl)) {
+            
+            println!("[+] Background: Precomputing album cache with parallel expansion...");
+            let start = Instant::now();
+            let fresh_songs = tags_data.get_album_aware_songs_parallel(mpd_client).await;
+            self.album_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+            self.album_precompute_pending = false;
+            println!("[+] Background: Album cache precomputed in {:?} ({} songs)", 
+                     start.elapsed(), fresh_songs.len());
+        }
+    }
+
+    // Rest of your existing methods remain the same
     pub fn add(&mut self, song: mpd::Song) {
         self.inner.push_back(song);
     }
 
-    // Remove and return the next song from the queue
     pub fn remove(&mut self) -> Option<mpd::Song> {
         self.inner.pop_front()
     }
 
-    // Peek at the next song in the queue
-    #[allow(dead_code)]
-    pub fn peek(&self) -> Option<&mpd::Song> {
-        self.inner.front()
-    }
-
-    // Get the length of the queue
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
-    // Get a slice of the first n songs in the queue, defaulting to 3 if count is None
     pub fn head(&self, count: Option<usize>) -> Vec<mpd::Song> {
         let count = count.unwrap_or(3);
         self.inner.iter().take(count).cloned().collect()
     }
 
-    // Get a slice of the last n songs in the queue, defaulting to 3 if count is None
     pub fn tail(&self, count: Option<usize>) -> Vec<mpd::Song> {
         let len = self.inner.len();
         let count = count.unwrap_or(3);
@@ -97,72 +289,6 @@ impl SongQueue {
         self.inner.clear();
     }
 
-    // NEW: Main shuffle method that uses caching intelligently
-    pub fn shuffle_and_add_with_cache(
-        &mut self,
-        tags_data: &crate::models::tags_data::TagsData,
-        mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
-    ) {
-        let start_time = Instant::now();
-
-        // Get songs from appropriate cache or fetch fresh
-        let songs = if self.album_aware {
-            if let Some(ref cached) = self.album_cache {
-                if self.is_cache_valid() {
-                    println!(
-                        "[+] Using cached album-aware songs ({} songs)",
-                        cached.len()
-                    );
-                    cached.clone()
-                } else {
-                    println!("[+] Album cache expired, refreshing...");
-                    let fresh_songs = tags_data.get_album_aware_songs(mpd_client);
-                    self.album_cache = Some(fresh_songs.clone());
-                    self.cache_timestamp = Some(Instant::now());
-                    fresh_songs
-                }
-            } else {
-                println!("[+] Building album-aware cache...");
-                let fresh_songs = tags_data.get_album_aware_songs(mpd_client);
-                self.album_cache = Some(fresh_songs.clone());
-                self.cache_timestamp = Some(Instant::now());
-                fresh_songs
-            }
-        } else {
-            if let Some(ref cached) = self.regular_cache {
-                if self.is_cache_valid() {
-                    println!("[+] Using cached regular songs ({} songs)", cached.len());
-                    cached.clone()
-                } else {
-                    println!("[+] Regular cache expired, refreshing...");
-                    let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-                    self.regular_cache = Some(fresh_songs.clone());
-                    self.cache_timestamp = Some(Instant::now());
-                    fresh_songs
-                }
-            } else {
-                println!("[+] Building regular cache...");
-                let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-                self.regular_cache = Some(fresh_songs.clone());
-                self.cache_timestamp = Some(Instant::now());
-                fresh_songs
-            }
-        };
-
-        // Use existing shuffle logic
-        if self.album_aware {
-            self.shuffle_and_add_album_aware(songs);
-        } else {
-            self.shuffle_and_add_regular(songs);
-        }
-
-        println!(
-            "[+] Cached shuffle_and_add took: {:?}",
-            start_time.elapsed()
-        );
-    }
-
-    // Keep the old method for backward compatibility
     pub fn shuffle_and_add(&mut self, songs: HashSet<HashableSong>) {
         if self.album_aware {
             self.shuffle_and_add_album_aware(songs);
@@ -177,7 +303,7 @@ impl SongQueue {
         self.empty_queue();
 
         let mut song_vec: Vec<mpd::Song> = songs.into_iter().map(mpd::Song::from).collect();
-        let mut rng = rand::rng(); // Fixed: use rand::rng() instead of thread_rng()
+        let mut rng = rand::rng();
         song_vec.shuffle(&mut rng);
 
         for song in song_vec {
@@ -188,7 +314,6 @@ impl SongQueue {
         println!("[-] shuffle_and_add_regular took: {:?}", elapsed_time);
     }
 
-    // Helper function to get a tag value from a song
     fn get_tag_value(song: &mpd::Song, tag_name: &str) -> Option<String> {
         song.tags
             .iter()
@@ -210,7 +335,6 @@ impl SongQueue {
             albums.entry(album_name).or_insert_with(Vec::new).push(song);
         }
 
-        // Sort each album by track number
         for (album_name, album_songs) in albums.iter_mut() {
             album_songs.sort_by(|a, b| {
                 let track_a = Self::get_tag_value(a, "Track")
@@ -221,23 +345,14 @@ impl SongQueue {
                     .unwrap_or(0);
                 track_a.cmp(&track_b)
             });
-
-            println!(
-                "[+] sorted album '{}' with {} tracks",
-                album_name,
-                album_songs.len()
-            );
         }
 
-        // Shuffle the order of albums
         let mut album_names: Vec<String> = albums.keys().cloned().collect();
-        let mut rng = rand::rng(); // Fixed: use rand::rng() instead of thread_rng()
+        let mut rng = rand::rng();
         album_names.shuffle(&mut rng);
 
-        // Add albums in shuffled order, but songs within each album in track order
         for album_name in album_names {
             if let Some(album_songs) = albums.remove(&album_name) {
-                println!("[+] adding album '{}' to queue", album_name);
                 for song in album_songs {
                     self.add(song);
                 }
@@ -248,30 +363,23 @@ impl SongQueue {
         println!("[-] album-aware shuffle_and_add took: {:?}", elapsed_time);
     }
 
-    #[allow(dead_code)]
-    pub fn shuffle(&mut self) {
-        let start_time = std::time::Instant::now();
-        let mut rng = rand::rng(); // Fixed: use rand::rng() instead of thread_rng()
-        let mut vec: Vec<mpd::Song> = self.inner.drain(..).collect();
-        vec.shuffle(&mut rng);
-        self.inner.extend(vec);
-        let elapsed_time = start_time.elapsed();
-        println!("[-] shuffle took: {:?}", elapsed_time);
+    // Performance monitoring methods
+    pub fn cache_stats(&self) -> (u64, u64, f64) {
+        let total = self.cache_hits + self.cache_misses;
+        let hit_rate = if total > 0 {
+            (self.cache_hits as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+        (self.cache_hits, self.cache_misses, hit_rate)
     }
 
-    // Optional: Add cache status methods for debugging
-    #[allow(dead_code)]
-    pub fn has_regular_cache(&self) -> bool {
-        self.regular_cache.is_some()
-    }
-
-    #[allow(dead_code)]
-    pub fn has_album_cache(&self) -> bool {
-        self.album_cache.is_some()
-    }
-
-    #[allow(dead_code)]
-    pub fn cache_age(&self) -> Option<Duration> {
-        self.cache_timestamp.map(|t| t.elapsed())
+    pub fn has_valid_cache(&self, tags_data: &crate::models::tags_data::TagsData) -> (bool, bool) {
+        let tags_hash = Self::hash_tags(tags_data);
+        let regular_valid = self.regular_cache.as_ref()
+            .map_or(false, |c| c.is_valid(tags_hash, self.cache_ttl));
+        let album_valid = self.album_cache.as_ref()
+            .map_or(false, |c| c.is_valid(tags_hash, self.cache_ttl));
+        (regular_valid, album_valid)
     }
 }

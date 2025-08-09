@@ -172,44 +172,6 @@ mod integration_tests {
         Ok(())
     }
 
-    // Helper function to test stress conditions with large datasets
-    fn test_stress_large_library(mpd_conn: &mut MpdConn) -> Result<(), Box<dyn std::error::Error>> {
-        // Test performance with larger datasets
-        let start_time = std::time::Instant::now();
-
-        // Search for all songs
-        let all_songs = mpd_conn.mpd.listall()?;
-
-        let list_time = start_time.elapsed();
-        println!("Listed {} songs in {:?}", all_songs.len(), list_time);
-
-        // Test search performance
-        let search_start = std::time::Instant::now();
-        let mut query = Query::new();
-        query.and(Term::Any, "the"); // Common word
-
-        let search_results = mpd_conn.mpd.search(&query, None)?;
-
-        let search_time = search_start.elapsed();
-        println!(
-            "Search found {} songs in {:?}",
-            search_results.len(),
-            search_time
-        );
-
-        // Performance assertions
-        assert!(
-            list_time.as_secs() < 10,
-            "Library listing should complete within 10 seconds"
-        );
-        assert!(
-            search_time.as_secs() < 5,
-            "Search should complete within 5 seconds"
-        );
-
-        Ok(())
-    }
-
     // Helper to check if MPD is available (assumes it's already running)
     fn check_mpd_available() -> Result<(), Box<dyn std::error::Error>> {
         match wait_for_mpd_ready(3) {
