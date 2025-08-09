@@ -33,6 +33,8 @@ struct Cli {
 enum Commands {
     /// Display current status of service
     Status,
+    /// Toggle album-aware mode
+    AlbumMode,
     /// Tag the currently playing song
     Tag(TagArgs),
     /// Untag the currently playing song
@@ -115,6 +117,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Handle status subcommand
             match status(&api_hostname).await {
                 Ok(_) => debug!("Status: OK"),
+                Err(err) => eprintln!("[!] Error: {}", err),
+            }
+        }
+        Commands::AlbumMode => {
+            // Handle album mode toggle
+            match toggle_album_mode(&api_hostname).await {
+                Ok(_) => debug!("Album mode toggled"),
                 Err(err) => eprintln!("[!] Error: {}", err),
             }
         }
@@ -278,6 +287,9 @@ async fn status(api_hostname: &str) -> Result<(), reqwest::Error> {
         // Attempt to deserialize the JSON response into TagsData
         match serde_json::from_str::<TagsData>(&body_tags) {
             Ok(tags_data) => {
+                if tags_data.album_aware {
+                    println!("{}", "album aware: ON".blue().bold());
+                }
                 println!("{}", "current playback tags:".cyan().bold());
                 println!("    {}: {:?}", "any".green().bold(), tags_data.any);
                 println!("    {}: {:?}", "not".red().bold(), tags_data.not);
@@ -480,6 +492,28 @@ async fn perform_tagging(
     } else {
         eprintln!(
             "[!] Error: Failed to update tags (HTTP {})",
+            response.status()
+        );
+    }
+
+    Ok(())
+}
+
+async fn toggle_album_mode(api_hostname: &str) -> Result<(), reqwest::Error> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/album-mode/toggle", api_hostname);
+
+    let response = client
+        .post(&url)
+        .header(reqwest::header::CONTENT_LENGTH, "0")
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        println!("[+] Album-aware mode toggled");
+    } else {
+        eprintln!(
+            "[!] Error: Failed to toggle album mode (HTTP {})",
             response.status()
         );
     }

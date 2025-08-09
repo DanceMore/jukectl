@@ -20,10 +20,12 @@ pub fn initialize() -> AppState {
 
     let song_queue = Arc::new(RwLock::new(SongQueue::new()));
 
-    // Shareable TagsData with default values
+    // Shareable TagsData with default values including album-aware settings
     let default_tags_data = TagsData {
         any: vec!["jukebox".to_string()],
         not: vec!["explicit".to_string()],
+        album_aware: false,
+        album_tags: vec!["albums".to_string()], // Default tag for album representatives
     };
     let tags_data = Arc::new(RwLock::new(default_tags_data));
 
@@ -42,6 +44,10 @@ pub async fn initialize_queue(state: &AppState) {
 
     // Set up the jukebox SongQueue at boot
     println!("[+] Initializing song queue...");
+    
+    // Set album-aware mode in the queue based on tags_data
+    locked_song_queue.set_album_aware(locked_tags_data.album_aware);
+    
     let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
     locked_song_queue.shuffle_and_add(songs);
 

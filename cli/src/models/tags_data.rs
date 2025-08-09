@@ -9,6 +9,7 @@ use std::fmt;
 pub struct TagsData {
     pub any: Vec<String>,
     pub not: Vec<String>,
+    pub album_aware: bool,
 }
 
 // Implement the Debug trait for TagsData
@@ -16,8 +17,8 @@ impl fmt::Debug for TagsData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{{\n    any: {:?},\n    not: {:?}\n}}",
-            self.any, self.not
+            "{{\n    any: {:?},\n    not: {:?},\n    album_aware: {:?}\n}}",
+            self.any, self.not, self.album_aware
         )
     }
 }
@@ -38,5 +39,6 @@ pub fn parse_tags_data_from_argv(tags: &str, not_tags: &str) -> TagsData {
     TagsData {
         any: tags.split(',').map(|s| s.trim().to_string()).collect(),
         not: not_tags.split(',').map(|s| s.trim().to_string()).collect(),
+        album_aware: false,
     }
 }
