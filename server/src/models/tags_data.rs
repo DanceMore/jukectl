@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use rand::seq::SliceRandom; // Add this import
 
 use crate::models::hashable_song::HashableSong;
 use crate::mpd_conn::mpd_conn::MpdConn;
@@ -11,24 +12,48 @@ pub struct TagsData {
 }
 
 impl TagsData {
+    // Add a sensible limit for album-aware mode
+    const MAX_ALBUMS_ALBUM_AWARE: usize = 150;
+
     // Get regular (non-album-aware) songs
     pub fn get_allowed_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
         self.get_regular_songs(mpd_client)
     }
 
-    // Get album-aware songs - this is a separate method to maintain separation of concerns
+    // UPDATED: Get album-aware songs with limits and random selection
     pub fn get_album_aware_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
         let mut album_songs = HashSet::new();
+        let mut processed_albums = HashSet::new();
+        let mut album_count = 0;
 
         // Get album representative songs from any tags
         for tag in &self.any {
             if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
                 println!("[+] fetching album representatives from tag {}", tag);
 
-                for representative_song in playlist {
-                    // For each representative song, get the full album
+                // Convert to Vec and shuffle for random album selection
+                let mut representative_songs: Vec<_> = playlist.into_iter().collect();
+                let mut rng = rand::rng(); // Fixed: use rand::rng()
+                representative_songs.shuffle(&mut rng);
+
+                for representative_song in representative_songs {
+                    // Stop if we've hit our album limit
+                    if album_count >= Self::MAX_ALBUMS_ALBUM_AWARE {
+                        println!("[!] Hit album limit of {}, stopping album expansion", Self::MAX_ALBUMS_ALBUM_AWARE);
+                        break;
+                    }
+
                     if let Some(album_name) = Self::get_tag_value(&representative_song, "Album") {
-                        println!("[+] expanding album: {}", album_name);
+                        // Skip if we've already processed this album
+                        if processed_albums.contains(&album_name) {
+                            continue;
+                        }
+                        
+                        processed_albums.insert(album_name.clone());
+                        album_count += 1;
+                        
+                        println!("[+] expanding album {}/{}: {}", 
+                                album_count, Self::MAX_ALBUMS_ALBUM_AWARE, album_name);
 
                         // Get all songs from this album
                         let album_songs_result = self.get_songs_from_album(mpd_client, &album_name);
@@ -36,6 +61,11 @@ impl TagsData {
                             album_songs.insert(HashableSong(song));
                         }
                     }
+                }
+                
+                // Break out of tag loop if we've hit our limit
+                if album_count >= Self::MAX_ALBUMS_ALBUM_AWARE {
+                    break;
                 }
             }
         }
@@ -51,6 +81,8 @@ impl TagsData {
             }
         }
 
+        println!("[+] Album-aware: {} albums processed, {} total songs", 
+                processed_albums.len(), album_songs.len());
         album_songs
     }
 

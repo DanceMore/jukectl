@@ -62,38 +62,21 @@ async fn shuffle_songs(app_state: &rocket::State<AppState>) -> Json<ShuffleRespo
     let mut locked_mpd_conn = app_state.mpd_conn.write().await;
     let mut locked_song_queue = app_state.song_queue.write().await;
     let locked_tags_data = app_state.tags_data.read().await;
-    let locked_album_aware = app_state.album_aware.read().await;
-
-    // Get the desired songs based on album-aware mode
-    let songs = if *locked_album_aware {
-        locked_tags_data.get_album_aware_songs(&mut locked_mpd_conn)
-    } else {
-        locked_tags_data.get_allowed_songs(&mut locked_mpd_conn)
-    };
-
-    // Handle the case where there are no valid songs
-    if songs.is_empty() {
-        return Json(ShuffleResponse {
-            old: Vec::new(),
-            new: Vec::new(),
-        });
-    }
 
     // Capture the old songs before shuffling
-    let old_songs = (*locked_song_queue).head(None).clone();
+    let old_songs = locked_song_queue.head(None);
 
-    // Use a method on the SongQueue object to handle the shuffle and adding of songs
-    locked_song_queue.shuffle_and_add(songs);
+    // Use the new caching method - this will be MUCH faster on subsequent calls
+    locked_song_queue.shuffle_and_add_with_cache(&*locked_tags_data, &mut *locked_mpd_conn);
 
     // Capture the new songs after shuffling
-    let new_songs = (*locked_song_queue).head(None).clone();
+    let new_songs = locked_song_queue.head(None);
 
     let response = ShuffleResponse {
         old: queue_to_filenames(old_songs),
         new: queue_to_filenames(new_songs),
     };
 
-    // release locks
     drop(locked_mpd_conn);
     drop(locked_song_queue);
     drop(locked_tags_data);
