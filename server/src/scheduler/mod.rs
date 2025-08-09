@@ -13,26 +13,18 @@ async fn scheduler_mainbody(app_state: AppState) {
     loop {
         debug!("[-] scheduler firing");
 
-        // Get locks asynchronously
         let mut locked_mpd_conn = app_state.mpd_conn.write().await;
         let mut locked_song_queue = app_state.song_queue.write().await;
         let locked_tags_data = app_state.tags_data.read().await;
-        let locked_album_aware = app_state.album_aware.read().await;
 
-        // make sure SongQueue is not empty
+        // Make sure SongQueue is not empty - use caching for instant refills!
         if locked_song_queue.len() == 0 {
             info!("[!] scheduler sees an empty queue, refilling...");
-            // If song_queue is empty, fetch songs and add them based on album-aware mode
-            let songs = if *locked_album_aware {
-                locked_tags_data.get_album_aware_songs(&mut locked_mpd_conn)
-            } else {
-                locked_tags_data.get_allowed_songs(&mut locked_mpd_conn)
-            };
-            locked_song_queue.shuffle_and_add(songs);
+            // This will be super fast due to caching
+            locked_song_queue.shuffle_and_add_with_cache(&*locked_tags_data, &mut *locked_mpd_conn);
         }
 
-        // only do work if the live MPD queue length is less than 2
-        // ie: 1 Song now-playing, 1 Song on-deck
+        // Rest of scheduler logic stays the same...
         let mpd_queue_result = locked_mpd_conn.mpd.queue();
 
         match mpd_queue_result {
@@ -48,26 +40,22 @@ async fn scheduler_mainbody(app_state: AppState) {
                         }
                     }
                 } else {
-                    // do nothing, but let's print to prove we worked...
                     print!(".");
                     let _ = std::io::stdout().flush();
                 }
             }
             Err(error) => {
                 eprintln!("[!] Error getting MPD queue: {}", error);
-                // Consider reconnecting here
                 if let Err(reconnect_error) = locked_mpd_conn.reconnect() {
                     eprintln!("[!] Error reconnecting to MPD: {}", reconnect_error);
                 }
             }
         }
 
-        // drop locks until the next loop...
         drop(locked_song_queue);
         drop(locked_tags_data);
         drop(locked_mpd_conn);
 
-        // Non-blocking sleep using tokio
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
 }
