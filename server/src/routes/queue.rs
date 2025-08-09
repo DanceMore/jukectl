@@ -62,9 +62,14 @@ async fn shuffle_songs(app_state: &rocket::State<AppState>) -> Json<ShuffleRespo
     let mut locked_mpd_conn = app_state.mpd_conn.write().await;
     let mut locked_song_queue = app_state.song_queue.write().await;
     let locked_tags_data = app_state.tags_data.read().await;
+    let locked_album_aware = app_state.album_aware.read().await;
 
-    // Get the desired songs
-    let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
+    // Get the desired songs based on album-aware mode
+    let songs = if *locked_album_aware {
+        locked_tags_data.get_album_aware_songs(&mut locked_mpd_conn)
+    } else {
+        locked_tags_data.get_allowed_songs(&mut locked_mpd_conn)
+    };
 
     // Handle the case where there are no valid songs
     if songs.is_empty() {

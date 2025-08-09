@@ -8,17 +8,50 @@ use crate::mpd_conn::mpd_conn::MpdConn;
 pub struct TagsData {
     pub any: Vec<String>,
     pub not: Vec<String>,
-    pub album_aware: bool,
-    pub album_tags: Vec<String>, // Tags that contain album representatives
 }
 
 impl TagsData {
+    // Get regular (non-album-aware) songs
     pub fn get_allowed_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
-        if self.album_aware {
-            self.get_album_aware_songs(mpd_client)
-        } else {
-            self.get_regular_songs(mpd_client)
+        self.get_regular_songs(mpd_client)
+    }
+
+    // Get album-aware songs - this is a separate method to maintain separation of concerns
+    pub fn get_album_aware_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
+        let mut album_songs = HashSet::new();
+
+        // Get album representative songs from any tags
+        for tag in &self.any {
+            if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
+                println!("[+] fetching album representatives from tag {}", tag);
+
+                for representative_song in playlist {
+                    // For each representative song, get the full album
+                    if let Some(album_name) = Self::get_tag_value(&representative_song, "Album") {
+                        println!("[+] expanding album: {}", album_name);
+
+                        // Get all songs from this album
+                        let album_songs_result = self.get_songs_from_album(mpd_client, &album_name);
+                        for song in album_songs_result {
+                            album_songs.insert(HashableSong(song));
+                        }
+                    }
+                }
+            }
         }
+
+        // Apply "not" filters
+        let (_, not_tags) = self.tags_to_strings();
+        for tag in &not_tags {
+            if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
+                println!("[-] removing songs from tag {}", tag);
+                for song in playlist {
+                    album_songs.remove(&HashableSong(song));
+                }
+            }
+        }
+
+        album_songs
     }
 
     fn get_regular_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
@@ -63,48 +96,12 @@ impl TagsData {
             .map(|(_, value)| value.clone())
     }
 
-    fn get_album_aware_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
-        let mut album_songs = HashSet::new();
-
-        // Get album representative songs from album_tags
-        for tag in &self.album_tags {
-            if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
-                println!("[+] fetching album representatives from tag {}", tag);
-                
-                for representative_song in playlist {
-                    // For each representative song, get the full album
-                    if let Some(album_name) = Self::get_tag_value(&representative_song, "Album") {
-                        println!("[+] expanding album: {}", album_name);
-                        
-                        // Get all songs from this album
-                        let album_songs_result = self.get_songs_from_album(mpd_client, &album_name);
-                        for song in album_songs_result {
-                            album_songs.insert(HashableSong(song));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Apply "not" filters
-        let (_, not_tags) = self.tags_to_strings();
-        for tag in &not_tags {
-            if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
-                println!("[-] removing songs from tag {}", tag);
-                for song in playlist {
-                    album_songs.remove(&HashableSong(song));
-                }
-            }
-        }
-
-        album_songs
-    }
-
+    // Get all songs from a specific album
     fn get_songs_from_album(&self, mpd_client: &mut MpdConn, album_name: &str) -> Vec<mpd::Song> {
         // Use Term::Tag("album") to search by album tag
         let mut query = mpd::Query::new();
         query.and(mpd::Term::Tag("album".into()), album_name);
-        
+
         match mpd_client.mpd.search(&query, None) {
             Ok(songs) => songs,
             Err(e) => {

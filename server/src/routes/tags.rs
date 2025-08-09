@@ -15,8 +15,7 @@ async fn tags(app_state: &rocket::State<AppState>) -> Json<TagsData> {
 pub struct TagsUpdate {
     pub any: Option<Vec<String>>,
     pub not: Option<Vec<String>>,
-    pub album_aware: Option<bool>,
-    pub album_tags: Option<Vec<String>>,
+    // album_aware and album_tags removed as they are now in AppState
 }
 
 #[post("/tags", data = "<tags_update>")]
@@ -27,6 +26,7 @@ async fn update_tags(
     let mut locked_mpd_conn = app_state.mpd_conn.write().await;
     let mut locked_song_queue = app_state.song_queue.write().await;
     let mut locked_tags_data = app_state.tags_data.write().await;
+    let locked_album_aware = app_state.album_aware.read().await;
 
     // Check if 'any' and 'not' fields are present and update them if needed
     if let Some(any) = &tags_update.any {
@@ -35,14 +35,7 @@ async fn update_tags(
     if let Some(not) = &tags_update.not {
         locked_tags_data.not = not.clone();
     }
-    if let Some(album_aware) = tags_update.album_aware {
-        locked_tags_data.album_aware = album_aware;
-        locked_song_queue.set_album_aware(album_aware);
-        println!("[+] album-aware mode set to: {}", album_aware);
-    }
-    if let Some(album_tags) = &tags_update.album_tags {
-        locked_tags_data.album_tags = album_tags.clone();
-    }
+    // Album-aware mode is now handled by AppState, not TagsData
 
     // If 'not' field is not empty, empty the 'TagsData.not' field
     if !tags_update
@@ -54,7 +47,11 @@ async fn update_tags(
         locked_tags_data.not.clear();
     }
 
-    let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
+    let songs = if *locked_album_aware {
+        locked_tags_data.get_album_aware_songs(&mut locked_mpd_conn)
+    } else {
+        locked_tags_data.get_allowed_songs(&mut locked_mpd_conn)
+    };
     locked_song_queue.shuffle_and_add(songs);
 
     let res = locked_tags_data.clone();
@@ -73,23 +70,30 @@ async fn set_album_mode(
     enabled: bool,
     app_state: &rocket::State<AppState>,
 ) -> Json<serde_json::Value> {
+    // Update the album-aware setting in AppState
     let mut locked_mpd_conn = app_state.mpd_conn.write().await;
     let mut locked_song_queue = app_state.song_queue.write().await;
-    let mut locked_tags_data = app_state.tags_data.write().await;
+    let locked_tags_data = app_state.tags_data.read().await;
 
-    // Update the album-aware setting
-    locked_tags_data.album_aware = enabled;
+    // TODO: this probably does need to be mutable, why aren't we updating it? we only update song_queue ???
+    let mut locked_album_aware = app_state.album_aware.write().await;
+
+    // Update the song queue with new settings
     locked_song_queue.set_album_aware(enabled);
 
     println!("[+] album-aware mode set to: {}", enabled);
 
     // Regenerate the queue with the new mode
-    let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
+    let songs = if enabled {
+        locked_tags_data.get_album_aware_songs(&mut locked_mpd_conn)
+    } else {
+        locked_tags_data.get_allowed_songs(&mut locked_mpd_conn)
+    };
     locked_song_queue.shuffle_and_add(songs);
 
     let response = serde_json::json!({
-        "album_aware": enabled,
-        "message": if enabled { "Album-aware mode enabled" } else { "Album-aware mode disabled" }
+        "album_aware": *locked_album_aware,
+        "message": if *locked_album_aware { "Album-aware mode enabled" } else { "Album-aware mode disabled" }
     });
 
     Json(response)
@@ -100,23 +104,30 @@ async fn set_album_mode(
 async fn toggle_album_mode(
     app_state: &rocket::State<AppState>,
 ) -> Json<serde_json::Value> {
+    // Toggle the album-aware setting in AppState
     let mut locked_mpd_conn = app_state.mpd_conn.write().await;
     let mut locked_song_queue = app_state.song_queue.write().await;
-    let mut locked_tags_data = app_state.tags_data.write().await;
+    let locked_tags_data = app_state.tags_data.read().await;
 
-    // Toggle the album-aware setting
-    locked_tags_data.album_aware = !locked_tags_data.album_aware;
-    locked_song_queue.set_album_aware(locked_tags_data.album_aware);
+    // TODO: this probably DOES need to be mutable, why are we not toggling app_state.album_aware and only touching song_queue again
+    let mut locked_album_aware = app_state.album_aware.write().await;
 
-    println!("[+] album-aware mode toggled to: {}", locked_tags_data.album_aware);
+    // Update the song queue with new settings
+    locked_song_queue.set_album_aware(*locked_album_aware);
+
+    println!("[+] album-aware mode toggled to: {}", locked_album_aware);
 
     // Regenerate the queue with the new mode
-    let songs = locked_tags_data.get_allowed_songs(&mut locked_mpd_conn);
+    let songs = if *locked_album_aware {
+        locked_tags_data.get_album_aware_songs(&mut locked_mpd_conn)
+    } else {
+        locked_tags_data.get_allowed_songs(&mut locked_mpd_conn)
+    };
     locked_song_queue.shuffle_and_add(songs);
 
     let response = serde_json::json!({
-        "album_aware": locked_tags_data.album_aware,
-        "message": if locked_tags_data.album_aware { "Album-aware mode enabled" } else { "Album-aware mode disabled" }
+        "album_aware": *locked_album_aware,
+        "message": if *locked_album_aware { "Album-aware mode enabled" } else { "Album-aware mode disabled" }
     });
 
     Json(response)
