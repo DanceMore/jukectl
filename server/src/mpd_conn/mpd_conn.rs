@@ -14,13 +14,18 @@ impl MpdConn {
     pub fn new() -> Result<Self> {
         println!("[!] connecting to mpd...");
         let (mpd, address, host, port) = MpdConn::connect_mpd()?;
-        Ok(MpdConn { mpd, address, host, port })
+        Ok(MpdConn {
+            mpd,
+            address,
+            host,
+            port,
+        })
     }
 
     // New method for creating connections with specific host/port
     pub fn new_with_host(host: &str, port: u16) -> Result<Self> {
         println!("[!] connecting to mpd at {}:{}...", host, port);
-        
+
         // Resolve the host and port
         let address = (host, port)
             .to_socket_addrs()
@@ -33,11 +38,11 @@ impl MpdConn {
         // Set consume to true as part of Jukectl
         mpd.consume(true)?;
 
-        Ok(MpdConn { 
-            mpd, 
-            address, 
-            host: host.to_string(), 
-            port 
+        Ok(MpdConn {
+            mpd,
+            address,
+            host: host.to_string(),
+            port,
         })
     }
 
