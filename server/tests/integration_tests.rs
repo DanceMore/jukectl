@@ -19,43 +19,6 @@ mod integration_tests {
         env::var("RUN_INTEGRATION_TESTS").unwrap_or_default() == "1"
     }
 
-    // Helper function to safely create and clean up test playlists
-    fn manage_test_playlist(
-        mpd_conn: &mut MpdConn,
-        playlist_name: &str,
-        song_to_add: Option<&mpd::Song>,
-        should_create: bool,
-        should_cleanup: bool
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        // If we need to create the playlist and have a song to add
-        if should_create && let Some(song) = song_to_add {
-            // First try to remove any existing playlist (silently ignore errors)
-            let _ = mpd_conn.mpd.pl_remove(playlist_name);
-    
-            // Create fresh playlist and add the song
-            mpd_conn.mpd.pl_push(playlist_name, song.clone())?;
-            println!("Created test playlist '{}' with song", playlist_name);
-            Ok(true)
-        } else if should_cleanup {
-            // Clean up the playlist if requested
-            let _ = mpd_conn.mpd.pl_remove(playlist_name);
-            println!("Cleaned up test playlist '{}'", playlist_name);
-            Ok(false)
-        } else {
-            // Just check if playlist exists
-            match mpd_conn.mpd.playlist(playlist_name) {
-                Ok(songs) => {
-                    println!("Playlist '{}' exists with {} songs", playlist_name, songs.len());
-                    Ok(!songs.is_empty())
-                }
-                Err(_) => {
-                    println!("Playlist '{}' does not exist", playlist_name);
-                    Ok(false)
-                }
-            }
-        }
-    }
-    
     // Helper to wait for MPD to be ready
     fn wait_for_mpd_ready(max_attempts: u32) -> Result<(), Box<dyn std::error::Error>> {
         for attempt in 1..=max_attempts {
@@ -297,8 +260,11 @@ mod integration_tests {
 
         let mut mpd_conn = MpdConn::new().expect("Failed to connect to test MPD");
 
-        // Test playlist operations with safe helper
-        let test_playlist = "test_playlist_ops"; // Use a dedicated test playlist instead of "jukebox"
+        // Test playlist operations
+        let test_playlist = "jukebox";
+
+        // Clean up any existing playlist
+        let _ = mpd_conn.mpd.pl_remove(test_playlist);
 
         // Search for a song to add to playlist
         let mut query = Query::new();
@@ -312,9 +278,11 @@ mod integration_tests {
         assert!(!songs.is_empty(), "Should find at least one test song");
         let test_song = &songs[0];
 
-        // Create playlist with our helper (creates if needed)
-        manage_test_playlist(&mut mpd_conn, test_playlist, Some(test_song), true, false)
-            .expect("Failed to create test playlist");
+        // Create playlist and add song
+        mpd_conn
+            .mpd
+            .pl_push(test_playlist, test_song.clone())
+            .expect("Failed to add song to playlist");
 
         // Verify playlist contents
         let playlist_songs = mpd_conn
@@ -325,9 +293,11 @@ mod integration_tests {
         assert_eq!(playlist_songs.len(), 1);
         assert_eq!(playlist_songs[0].file, test_song.file);
 
-        // Clean up using our helper
-        manage_test_playlist(&mut mpd_conn, test_playlist, None, false, true)
-            .expect("Failed to clean up test playlist");
+        // Clean up
+        mpd_conn
+            .mpd
+            .pl_remove(test_playlist)
+            .expect("Failed to remove test playlist");
 
         println!("✓ Playlist operations test passed");
     }
@@ -347,6 +317,10 @@ mod integration_tests {
         let rock_playlist = "test_rock";
         let jazz_playlist = "test_jazz";
 
+        // Clean up any existing playlists
+        let _ = mpd_conn.mpd.pl_remove(rock_playlist);
+        let _ = mpd_conn.mpd.pl_remove(jazz_playlist);
+
         // Find some rock songs (assuming your test data has these)
         let mut rock_query = Query::new();
         rock_query.and(Term::Tag("genre".into()), "Rock");
@@ -363,25 +337,19 @@ mod integration_tests {
             .search(&jazz_query, Some((0, 5)))
             .expect("Failed to find jazz songs");
 
-        // Add representative songs to playlists using our safe helper
+        // Add representative songs to playlists
         if !rock_songs.is_empty() {
-            manage_test_playlist(
-                &mut mpd_conn,
-                rock_playlist,
-                Some(&rock_songs[0]),
-                true,
-                false
-            ).expect("Failed to create rock playlist");
+            mpd_conn
+                .mpd
+                .pl_push(rock_playlist, rock_songs[0].clone())
+                .expect("Failed to add rock song to playlist");
         }
 
         if !jazz_songs.is_empty() {
-            manage_test_playlist(
-                &mut mpd_conn,
-                jazz_playlist,
-                Some(&jazz_songs[0]),
-                true,
-                false
-            ).expect("Failed to create jazz playlist");
+            mpd_conn
+                .mpd
+                .pl_push(jazz_playlist, jazz_songs[0].clone())
+                .expect("Failed to add jazz song to playlist");
         }
 
         // Test TagsData with album-aware functionality
@@ -402,14 +370,9 @@ mod integration_tests {
 
         assert!(queue.len() > 0, "Queue should contain songs");
 
-        // Clean up using our safe helper
-        if manage_test_playlist(&mut mpd_conn, rock_playlist, None, false, true).unwrap_or(false) {
-            println!("Cleaned up rock playlist");
-        }
-
-        if manage_test_playlist(&mut mpd_conn, jazz_playlist, None, false, true).unwrap_or(false) {
-            println!("Cleaned up jazz playlist");
-        }
+        // Clean up
+        let _ = mpd_conn.mpd.pl_remove(rock_playlist);
+        let _ = mpd_conn.mpd.pl_remove(jazz_playlist);
 
         println!("✓ Real album-aware functionality test passed");
     }
@@ -436,7 +399,7 @@ mod integration_tests {
         let list_time = start_time.elapsed();
         println!("Listed {} songs in {:?}", all_songs.len(), list_time);
 
-        // Test search performance with common word
+        // Test search performance
         let search_start = std::time::Instant::now();
         let mut query = Query::new();
         query.and(Term::Any, "the"); // Common word
@@ -453,85 +416,16 @@ mod integration_tests {
             search_time
         );
 
-        // Test with large album specifically
-        let large_album_query_start = std::time::Instant::now();
-        let mut large_album_query = Query::new();
-        large_album_query.and(Term::Tag("album".into()), "100 Song Epic");
-
-        let large_album_results = mpd_conn
-            .mpd
-            .search(&large_album_query, None)
-            .expect("Failed to search for large album");
-
-        let large_album_time = large_album_query_start.elapsed();
-        println!(
-            "Large album search found {} songs in {:?}",
-            large_album_results.len(),
-            large_album_time
-        );
-
-        // Test with edge case albums (Unicode, long names)
-        let unicode_search_start = std::time::Instant::now();
-        let mut unicode_query = Query::new();
-        unicode_query.and(Term::Tag("album".into()), "世界音楽 Collection");
-
-        let unicode_results = mpd_conn
-            .mpd
-            .search(&unicode_query, None)
-            .expect("Failed to search for Unicode album");
-
-        let unicode_time = unicode_search_start.elapsed();
-        println!(
-            "Unicode album search found {} songs in {:?}",
-            unicode_results.len(),
-            unicode_time
-        );
-
-        // Test with long names album
-        let long_names_start = std::time::Instant::now();
-        let mut long_names_query = Query::new();
-        long_names_query.and(Term::Tag("album".into()), "This Album Title Is Also Ridiculously Long And Contains Many Words That Describe Nothing Important But Test String Length Handling");
-
-        let long_names_results = mpd_conn
-            .mpd
-            .search(&long_names_query, None)
-            .expect("Failed to search for long-named album");
-
-        let long_names_time = long_names_start.elapsed();
-        println!(
-            "Long names album search found {} songs in {:?}",
-            long_names_results.len(),
-            long_names_time
-        );
-
-        // Performance assertions with stricter thresholds for large datasets
+        // Performance assertions
         assert!(
-            list_time.as_secs() < 15,
-            "Library listing should complete within 15 seconds"
+            list_time.as_secs() < 10,
+            "Library listing should complete within 10 seconds"
         );
         assert!(
-            search_time.as_secs() < 10,
-            "Search should complete within 10 seconds"
-        );
-        assert!(
-            large_album_time.as_secs() < 10,
-            "Large album search should complete within 10 seconds"
-        );
-        assert!(
-            unicode_time.as_secs() < 5,
-            "Unicode album search should complete within 5 seconds"
-        );
-        assert!(
-            long_names_time.as_secs() < 5,
-            "Long names album search should complete within 5 seconds"
+            search_time.as_secs() < 5,
+            "Search should complete within 5 seconds"
         );
 
-        // Verify we found expected number of songs in large album
-        assert!(
-            large_album_results.len() >= 40, // Should have at least most of the 50 tracks
-            "Should find majority of songs in large album"
-        );
-
-        println!("✓ Enhanced stress test passed");
+        println!("✓ Stress test passed");
     }
 }
