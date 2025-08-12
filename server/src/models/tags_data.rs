@@ -14,8 +14,8 @@ pub struct TagsData {
 }
 
 impl TagsData {
-    const MAX_ALBUMS_ALBUM_AWARE: usize = 150;
-    const PARALLEL_BATCH_SIZE: usize = 20; // Process albums in parallel batches
+    const MAX_ALBUMS_ALBUM_AWARE: usize = 40;
+    const PARALLEL_BATCH_SIZE: usize = 4; // Process albums in parallel batches
 
     // Get regular (non-album-aware) songs
     pub fn get_allowed_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {

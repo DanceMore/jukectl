@@ -116,19 +116,19 @@ impl SongQueue {
     }
 
     // Updated cache validation
-    fn is_cache_valid(&self, tags_data: &crate::models::tags_data::TagsData) -> bool {
-        let current_hash = Self::hash_tags_with_mode(tags_data, self.album_aware);
+    //fn is_cache_valid(&self, tags_data: &crate::models::tags_data::TagsData) -> bool {
+    //    let current_hash = Self::hash_tags_with_mode(tags_data, self.album_aware);
 
-        if self.album_aware {
-            self.album_cache
-                .as_ref()
-                .map_or(false, |c| c.is_valid(current_hash, self.cache_ttl))
-        } else {
-            self.regular_cache
-                .as_ref()
-                .map_or(false, |c| c.is_valid(current_hash, self.cache_ttl))
-        }
-    }
+    //    if self.album_aware {
+    //        self.album_cache
+    //            .as_ref()
+    //            .map_or(false, |c| c.is_valid(current_hash, self.cache_ttl))
+    //    } else {
+    //        self.regular_cache
+    //            .as_ref()
+    //            .map_or(false, |c| c.is_valid(current_hash, self.cache_ttl))
+    //    }
+    //}
 
     // Fixed shuffle_and_add_with_cache_async
     pub async fn shuffle_and_add_with_cache_async(
