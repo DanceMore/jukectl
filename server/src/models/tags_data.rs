@@ -164,43 +164,6 @@ impl TagsData {
             .collect()
     }
 
-    // New helper method to filter songs by tags within parallel tasks
-    fn filter_songs_by_tags(
-        songs: Vec<mpd::Song>,
-        any_tags: &[String],
-        not_tags: &[String],
-        mpd_client: &mut MpdConn,
-    ) -> Vec<mpd::Song> {
-        let mut allowed_files = HashSet::new();
-        let mut forbidden_files = HashSet::new();
-
-        // Get allowed files from "any" tags
-        for tag in any_tags {
-            if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
-                for song in playlist {
-                    allowed_files.insert(song.file);
-                }
-            }
-        }
-
-        // Get forbidden files from "not" tags
-        for tag in not_tags {
-            if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
-                for song in playlist {
-                    forbidden_files.insert(song.file);
-                }
-            }
-        }
-
-        // Filter the songs
-        songs
-            .into_iter()
-            .filter(|song| {
-                allowed_files.contains(&song.file) && !forbidden_files.contains(&song.file)
-            })
-            .collect()
-    }
-
     // Fallback to original method for compatibility
     pub fn get_album_aware_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
         let mut album_songs = HashSet::new();
