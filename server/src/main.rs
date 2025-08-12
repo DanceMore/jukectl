@@ -10,12 +10,10 @@ use scheduler::start_scheduler;
 
 #[launch]
 fn rocket() -> _ {
-    // Initialize the app state
     let app_state = app_state::initialize();
 
-    // Build the rocket instance with routes and scheduler
     rocket::build()
-        .manage(app_state.clone())
+        .manage(app_state)
         .mount("/", routes::all_routes())
         .attach(rocket::fairing::AdHoc::on_liftoff(
             "Initialize Queue and Scheduler",
@@ -23,7 +21,7 @@ fn rocket() -> _ {
                 Box::pin(async move {
                     let state = rocket.state::<AppState>().unwrap();
                     app_state::initialize_queue(state).await;
-                    start_scheduler(app_state).await;
+                    start_scheduler(state.clone()).await; // Get it from rocket's state
                 })
             },
         ))

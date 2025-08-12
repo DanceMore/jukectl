@@ -1,23 +1,43 @@
 use rocket::tokio::sync::RwLock;
 use std::sync::Arc;
+use std::env;
 
 use jukectl_server::models::song_queue::SongQueue;
 use jukectl_server::models::tags_data::TagsData;
 use jukectl_server::mpd_conn::mpd_conn::MpdConn;
+use jukectl_server::mpd_conn::mpd_pool::MpdConnectionPool;
 
 #[derive(Clone)]
 pub struct AppState {
     pub mpd_conn: Arc<RwLock<MpdConn>>,
+    pub mpd_pool: Arc<MpdConnectionPool>,
     pub song_queue: Arc<RwLock<SongQueue>>,
     pub tags_data: Arc<RwLock<TagsData>>,
     pub album_aware: Arc<RwLock<bool>>, // Album-aware mode flag
 }
 
 pub fn initialize() -> AppState {
+    // Get MPD configuration from environment
+    let mpd_host = env::var("MPD_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let mpd_port: u16 = env::var("MPD_PORT")
+        .unwrap_or_else(|_| "6600".to_string())
+        .parse()
+        .expect("Failed to parse MPD_PORT as u16");
+
+    // Initialize the connection pool with the same host/port
+    let max_connections = env::var("MPD_MAX_CONNECTIONS")
+        .unwrap_or_else(|_| "5".to_string())
+        .parse()
+        .unwrap_or(5);
+
     // Initialize tokio synchronization primitives
+    // TODO: this gets MPD_HOST and MPD_PORD deeper in runtime which is a bug and sucks
+    // but also everything is moving to pool anyways...
     let mpd_conn = Arc::new(RwLock::new(
         MpdConn::new().expect("Failed to create MPD connection"),
     ));
+
+    let mpd_pool = Arc::new(MpdConnectionPool::new(&mpd_host, mpd_port, max_connections));
 
     let song_queue = Arc::new(RwLock::new(SongQueue::new()));
 
@@ -32,6 +52,7 @@ pub fn initialize() -> AppState {
 
     AppState {
         mpd_conn,
+        mpd_pool,
         song_queue,
         tags_data,
         album_aware,
