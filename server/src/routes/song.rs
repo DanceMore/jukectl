@@ -1,5 +1,4 @@
 use rocket::serde::json::Json;
-
 use crate::app_state::AppState;
 
 #[derive(serde::Deserialize)]
@@ -16,22 +15,29 @@ async fn update_song_tags(
     let add_tags = &song_tags.add; // Tags to add
     let remove_tags = &song_tags.remove; // Tags to remove
 
-    // Lock the MPD client connection
-    let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+    // Get connection from pool
+    let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("[!] Error getting MPD connection from pool: {}", e);
+            return Json("Error: Could not get MPD connection".to_string());
+        }
+    };
 
     // Get the first song from the now playing queue
-    let first_song = locked_mpd_conn
-        .mpd
-        .queue()
-        .expect("Failed to get MPD queue")
-        .first()
-        .cloned(); // Clone the song to work with
+    let first_song = match pooled_conn.mpd_conn().mpd.queue() {
+        Ok(queue) => queue.first().cloned(),
+        Err(e) => {
+            eprintln!("[!] Failed to get MPD queue: {}", e);
+            return Json("Error: Failed to get current song".to_string());
+        }
+    };
 
     if let Some(song) = first_song {
         for tag in add_tags {
             println!("[+] Add song to tag {}", tag);
             // Add the song to the playlist with the specified tag
-            if let Err(error) = locked_mpd_conn.mpd.pl_push(tag, song.clone()) {
+            if let Err(error) = pooled_conn.mpd_conn().mpd.pl_push(tag, song.clone()) {
                 eprintln!("[!] Error adding song to tag playlist: {}", error);
             }
         }
@@ -43,7 +49,7 @@ async fn update_song_tags(
 
             let fetch_timer = std::time::Instant::now();
             // Find the song's position(s) in the playlist with the specified tag
-            let playlist = match locked_mpd_conn.mpd.playlist(tag) {
+            let playlist = match pooled_conn.mpd_conn().mpd.playlist(tag) {
                 Ok(playlist) => playlist,
                 Err(err) => {
                     eprintln!("[!] Error getting playlist: {}", err);
@@ -65,7 +71,7 @@ async fn update_song_tags(
 
             // Delete the songs at the found positions
             for position in positions_to_delete.iter() {
-                if let Err(error) = locked_mpd_conn.mpd.pl_delete(tag, *position) {
+                if let Err(error) = pooled_conn.mpd_conn().mpd.pl_delete(tag, *position) {
                     eprintln!("Error removing song from tag playlist: {}", error);
                 }
             }
@@ -81,7 +87,6 @@ async fn update_song_tags(
                 );
             }
         }
-        drop(locked_mpd_conn);
 
         // Stop the timer
         let elapsed_time = remove_tags_timer.elapsed();

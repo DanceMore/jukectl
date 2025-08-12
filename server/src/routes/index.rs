@@ -1,3 +1,4 @@
+// index.rs - Updated to use connection pool
 use rocket::serde::json::Json;
 use rocket::Route;
 use rocket::State;
@@ -11,26 +12,27 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
 
 #[get("/")]
 pub async fn index(app_state: &State<AppState>) -> Json<Vec<String>> {
-    let mut locked_mpd_conn = app_state.mpd_conn.write().await;
-
     println!("[-] inside index method");
+    
+    // Get connection from pool instead of locking single connection
+    let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("[!] Error getting MPD connection from pool: {}", e);
+            return Json(Vec::new());
+        }
+    };
+
     // Attempt to retrieve the song queue
-    let song_array = match locked_mpd_conn.mpd.queue() {
+    let song_array = match pooled_conn.mpd_conn().mpd.queue() {
         Ok(queue) => queue,
         Err(error) => {
-            eprintln!(
-                "[!] Error retrieving song queue, triggering reconnect?: {}",
-                error
-            );
-            if let Err(reconnect_error) = locked_mpd_conn.reconnect() {
-                eprintln!("[!] Error reconnecting to MPD: {}", reconnect_error);
-            }
+            eprintln!("[!] Error retrieving song queue: {}", error);
             Vec::new()
         }
     };
 
     let res = queue_to_filenames(song_array);
-
     Json(res)
 }
 
@@ -42,13 +44,29 @@ pub struct SkipResponse {
 
 #[post("/skip")]
 pub async fn skip(app_state: &State<AppState>) -> Json<SkipResponse> {
-    let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+    // Get connection from pool
+    let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("[!] Error getting MPD connection from pool: {}", e);
+            return Json(SkipResponse {
+                skipped: String::new(),
+                new: String::new(),
+            });
+        }
+    };
 
     // Get the first song from the now playing queue
-    let now_playing_queue = locked_mpd_conn
-        .mpd
-        .queue()
-        .expect("Failed to get MPD queue");
+    let now_playing_queue = match pooled_conn.mpd_conn().mpd.queue() {
+        Ok(queue) => queue,
+        Err(e) => {
+            eprintln!("[!] Failed to get MPD queue: {}", e);
+            return Json(SkipResponse {
+                skipped: String::new(),
+                new: String::new(),
+            });
+        }
+    };
 
     let skipped_song = now_playing_queue
         .first()
@@ -60,7 +78,9 @@ pub async fn skip(app_state: &State<AppState>) -> Json<SkipResponse> {
         .unwrap_or_default();
 
     // Delete the first song (skip)
-    let _res = locked_mpd_conn.mpd.delete(0);
+    if let Err(e) = pooled_conn.mpd_conn().mpd.delete(0) {
+        eprintln!("[!] Error skipping song: {}", e);
+    }
 
     // Create the response struct with the data
     let response = SkipResponse {
