@@ -1,6 +1,6 @@
 use rocket::tokio::sync::RwLock;
-use std::sync::Arc;
 use std::env;
+use std::sync::Arc;
 
 use jukectl_server::models::song_queue::SongQueue;
 use jukectl_server::models::tags_data::TagsData;

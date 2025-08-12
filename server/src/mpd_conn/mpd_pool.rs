@@ -1,7 +1,7 @@
 // mpd_pool.rs - Fixed to work with your MpdConn wrapper
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
-use std::collections::VecDeque;
 
 use crate::mpd_conn::mpd_conn::MpdConn;
 
@@ -28,23 +28,26 @@ impl MpdConnectionPool {
     pub async fn initialize(&self) -> Result<(), mpd::error::Error> {
         let initial_size = std::cmp::min(2, self.max_connections);
         let mut connections = self.connections.lock().await;
-        
+
         for _ in 0..initial_size {
             if let Ok(conn) = MpdConn::new_with_host(&self.host, self.port) {
                 connections.push_back(conn);
             }
         }
-        
-        println!("[+] Connection pool initialized with {} connections", connections.len());
+
+        println!(
+            "[+] Connection pool initialized with {} connections",
+            connections.len()
+        );
         Ok(())
     }
 
     pub async fn get_connection(&self) -> Result<PooledMpdConnection, mpd::error::Error> {
         // Acquire semaphore permit (limits concurrent connections)
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
-        
+
         let mut connections = self.connections.lock().await;
-        
+
         let mpd_conn = if let Some(mut mpd_conn) = connections.pop_front() {
             // Test if connection is still alive by trying to reconnect
             if mpd_conn.reconnect().is_ok() {

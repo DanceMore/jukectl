@@ -125,7 +125,10 @@ async fn background_precompute_task(app_state: AppState) {
         let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
             Ok(conn) => conn,
             Err(e) => {
-                eprintln!("[!] Error getting MPD connection from pool in background task: {}", e);
+                eprintln!(
+                    "[!] Error getting MPD connection from pool in background task: {}",
+                    e
+                );
                 continue;
             }
         };
@@ -162,7 +165,10 @@ async fn background_precompute_task(app_state: AppState) {
             let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
                 Ok(conn) => conn,
                 Err(e) => {
-                    eprintln!("[!] Error getting MPD connection for extra precompute: {}", e);
+                    eprintln!(
+                        "[!] Error getting MPD connection for extra precompute: {}",
+                        e
+                    );
                     continue;
                 }
             };
