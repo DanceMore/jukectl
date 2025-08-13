@@ -8,9 +8,6 @@ mod routes;
 mod scheduler;
 use scheduler::start_scheduler;
 
-mod nolog;
-use crate::nolog::MyLoggingFairing;
-
 #[launch]
 fn rocket() -> _ {
     let app_state = app_state::initialize();
@@ -18,7 +15,6 @@ fn rocket() -> _ {
     rocket::build()
         .manage(app_state)
         .mount("/", routes::all_routes())
-        .attach(MyLoggingFairing)
         .attach(rocket::fairing::AdHoc::on_liftoff(
             "Initialize Queue and Scheduler",
             |rocket| {
