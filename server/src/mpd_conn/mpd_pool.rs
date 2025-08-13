@@ -5,6 +5,8 @@ use tokio::sync::{Mutex, Semaphore};
 
 use crate::mpd_conn::mpd_conn::MpdConn;
 
+use log::{debug, info, warn, error};
+
 pub struct MpdConnectionPool {
     connections: Arc<Mutex<VecDeque<MpdConn>>>,
     semaphore: Arc<Semaphore>,
@@ -43,6 +45,7 @@ impl MpdConnectionPool {
     }
 
     pub async fn get_connection(&self) -> Result<PooledMpdConnection, mpd::error::Error> {
+        info!("[.] connection pool was asked for a connection...");
         // Acquire semaphore permit (limits concurrent connections)
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
@@ -51,15 +54,18 @@ impl MpdConnectionPool {
         let mpd_conn = if let Some(mut mpd_conn) = connections.pop_front() {
             // Test if connection is still alive by trying to reconnect
             if mpd_conn.reconnect().is_ok() {
+                info!("[.] re-using an existing connection!");
                 mpd_conn
             } else {
                 // Connection is dead, create a new one
                 drop(connections); // Release lock before creating connection
+                info!("[+] creating new connection!");
                 MpdConn::new_with_host(&self.host, self.port)?
             }
         } else {
             // No pooled connections available, create new one
             drop(connections); // Release lock before creating connection
+            info!("[+] creating new connection!");
             MpdConn::new_with_host(&self.host, self.port)?
         };
 

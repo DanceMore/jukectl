@@ -13,6 +13,7 @@ rocket = { version = "0.5.0", features = ["json"] }
 
 mpd = "*"
 tokio = "1.47.1"
+log = "0.4.27"
 
 # we use cargo-geiger in the CICD workflows, but we don't
 # **actually** need it listed in dev-deps.... listing it here

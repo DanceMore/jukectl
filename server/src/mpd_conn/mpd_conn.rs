@@ -2,6 +2,8 @@ use mpd::{error::Result, Client};
 use std::env;
 use std::net::ToSocketAddrs;
 
+use log::{debug, info, warn, error};
+
 pub struct MpdConn {
     pub mpd: Client,
     address: Vec<std::net::SocketAddr>,
@@ -12,7 +14,7 @@ pub struct MpdConn {
 
 impl MpdConn {
     pub fn new() -> Result<Self> {
-        println!("[!] connecting to mpd...");
+        info!("[!] connecting to mpd...");
         let (mpd, address, host, port) = MpdConn::connect_mpd()?;
         Ok(MpdConn {
             mpd,
@@ -24,7 +26,7 @@ impl MpdConn {
 
     // New method for creating connections with specific host/port
     pub fn new_with_host(host: &str, port: u16) -> Result<Self> {
-        println!("[!] connecting to mpd at {}:{}...", host, port);
+        info!("[!] connecting to mpd at {}:{}...", host, port);
 
         // Resolve the host and port
         let address = (host, port)
@@ -75,13 +77,13 @@ impl MpdConn {
     }
 
     pub fn reconnect(&mut self) -> Result<()> {
-        println!("[!] Checking connection...");
+        debug!("[!] Checking connection...");
         if self.is_connected()? {
-            println!("[+] Connection is alive.");
+            debug!("[+] Connection is alive.");
             return Ok(());
         }
 
-        println!("[!] Reconnecting to mpd...");
+        debug!("[!] Reconnecting to mpd...");
         let mut new_mpd = Client::connect(self.address[0])?;
         new_mpd.consume(true)?;
         self.mpd = new_mpd;
@@ -92,7 +94,7 @@ impl MpdConn {
         match self.mpd.ping() {
             Ok(_) => Ok(true),
             Err(e) => {
-                println!("[!] Connection check failed: {}", e);
+                warn!("[!] Connection check failed: {}", e);
                 Ok(false)
             }
         }
