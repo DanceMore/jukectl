@@ -27,7 +27,16 @@ async fn scheduler_mainbody(app_state: AppState) {
             let _ = std::io::stdout().flush();
         }
 
-        let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+        // Get connection from pool instead of locking single connection
+        let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                eprintln!("[!] Error getting MPD connection from pool: {}", e);
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                continue;
+            }
+        };
+
         let mut locked_song_queue = app_state.song_queue.write().await;
         let locked_tags_data = app_state.tags_data.read().await;
 
@@ -37,23 +46,23 @@ async fn scheduler_mainbody(app_state: AppState) {
 
             // Use the ultra-fast async method for instant refills
             locked_song_queue
-                .shuffle_and_add_with_cache_async(&*locked_tags_data, &mut *locked_mpd_conn)
+                .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
                 .await;
         }
 
-        // Main MPD queue management (unchanged)
-        let mpd_queue_result = locked_mpd_conn.mpd.queue();
+        // Main MPD queue management - use pooled connection
+        let mpd_queue_result = pooled_conn.mpd_conn().mpd.queue();
 
         match mpd_queue_result {
             Ok(queue) => {
                 let now_playing_len = queue.len();
                 if now_playing_len < 2 {
                     if let Some(song) = locked_song_queue.remove() {
-                        if let Err(error) = locked_mpd_conn.mpd.push(song.clone()) {
+                        if let Err(error) = pooled_conn.mpd_conn().mpd.push(song.clone()) {
                             eprintln!("[!] Error pushing song to MPD: {}", error);
                         } else {
                             println!("[+] scheduler adding song {}", song.file);
-                            let _ = locked_mpd_conn.mpd.play();
+                            let _ = pooled_conn.mpd_conn().mpd.play();
 
                             // Request background precompute if queue is getting low
                             if locked_song_queue.len() < 50 {
@@ -67,9 +76,8 @@ async fn scheduler_mainbody(app_state: AppState) {
             }
             Err(error) => {
                 eprintln!("[!] Error getting MPD queue: {}", error);
-                if let Err(reconnect_error) = locked_mpd_conn.reconnect() {
-                    eprintln!("[!] Error reconnecting to MPD: {}", reconnect_error);
-                }
+                // With pool, we don't need to reconnect manually - just let the connection drop
+                // and get a fresh one next iteration
             }
         }
 
@@ -89,9 +97,9 @@ async fn scheduler_mainbody(app_state: AppState) {
             );
         }
 
+        // No need to explicitly drop - pooled_conn will return to pool automatically
         drop(locked_song_queue);
         drop(locked_tags_data);
-        drop(locked_mpd_conn);
 
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
@@ -113,15 +121,25 @@ async fn background_precompute_task(app_state: AppState) {
 
         println!("[+] Background precompute cycle #{}", cycle);
 
-        // Get locks in the right order to avoid deadlocks
-        let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+        // Get connection from pool
+        let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                eprintln!(
+                    "[!] Error getting MPD connection from pool in background task: {}",
+                    e
+                );
+                continue;
+            }
+        };
+
         let mut locked_song_queue = app_state.song_queue.write().await;
         let locked_tags_data = app_state.tags_data.read().await;
 
         // Perform background precomputation
         let precompute_start = std::time::Instant::now();
         locked_song_queue
-            .background_precompute(&*locked_tags_data, &mut *locked_mpd_conn)
+            .background_precompute(&*locked_tags_data, pooled_conn.mpd_conn())
             .await;
 
         let precompute_time = precompute_start.elapsed();
@@ -135,7 +153,7 @@ async fn background_precompute_task(app_state: AppState) {
 
         drop(locked_song_queue);
         drop(locked_tags_data);
-        drop(locked_mpd_conn);
+        // pooled_conn returns to pool automatically
 
         // More frequent precompute if we're in album-aware mode (it's more expensive)
         let album_aware = *app_state.album_aware.read().await;
@@ -143,18 +161,29 @@ async fn background_precompute_task(app_state: AppState) {
             // Extra precompute every minute for album mode
             tokio::time::sleep(Duration::from_secs(30)).await;
 
-            let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+            // Get another connection from pool for the extra precompute
+            let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    eprintln!(
+                        "[!] Error getting MPD connection for extra precompute: {}",
+                        e
+                    );
+                    continue;
+                }
+            };
+
             let mut locked_song_queue = app_state.song_queue.write().await;
             let locked_tags_data = app_state.tags_data.read().await;
 
             println!("[+] Extra album-aware precompute cycle");
             locked_song_queue
-                .background_precompute(&*locked_tags_data, &mut *locked_mpd_conn)
+                .background_precompute(&*locked_tags_data, pooled_conn.mpd_conn())
                 .await;
 
             drop(locked_song_queue);
             drop(locked_tags_data);
-            drop(locked_mpd_conn);
+            // pooled_conn returns to pool automatically
         }
     }
 }

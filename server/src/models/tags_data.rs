@@ -14,28 +14,28 @@ pub struct TagsData {
 }
 
 impl TagsData {
-    const MAX_ALBUMS_ALBUM_AWARE: usize = 150;
-    const PARALLEL_BATCH_SIZE: usize = 20; // Process albums in parallel batches
+    const MAX_ALBUMS_ALBUM_AWARE: usize = 40;
+    const PARALLEL_BATCH_SIZE: usize = 4; // Process albums in parallel batches
 
     // Get regular (non-album-aware) songs
     pub fn get_allowed_songs(&self, mpd_client: &mut MpdConn) -> HashSet<HashableSong> {
         self.get_regular_songs(mpd_client)
     }
 
-    // Fixed version of get_album_aware_songs_parallel in tags_data.rs
+    // Fixed version of get_album_aware_songs_parallel
     pub async fn get_album_aware_songs_parallel(
         &self,
         mpd_client: &mut MpdConn,
     ) -> HashSet<HashableSong> {
         let start_time = Instant::now();
-
+    
         // FIRST: Get the base set of allowed songs (respecting current tags)
         let allowed_songs = self.get_allowed_songs(mpd_client);
         println!(
             "[+] Base allowed songs from current tags: {}",
             allowed_songs.len()
         );
-
+    
         // SECOND: Group allowed songs by album
         let mut albums: HashMap<String, Vec<HashableSong>> = HashMap::new();
         for song in allowed_songs {
@@ -43,20 +43,20 @@ impl TagsData {
                 .unwrap_or_else(|| "Unknown Album".to_string());
             albums.entry(album_name).or_insert_with(Vec::new).push(song);
         }
-
+    
         println!("[+] Found {} albums from allowed songs", albums.len());
-
-        // THIRD: For each album, expand to get ALL songs in that album (but still filter by tags)
+    
+        // THIRD: For each album, get ALL songs in that album
         let mut all_album_songs = HashSet::new();
         let album_names: Vec<String> = albums
             .keys()
             .take(Self::MAX_ALBUMS_ALBUM_AWARE)
             .cloned()
             .collect();
-
+    
         // Process albums in parallel batches
         let chunks: Vec<_> = album_names.chunks(Self::PARALLEL_BATCH_SIZE).collect();
-
+    
         for (batch_idx, chunk) in chunks.iter().enumerate() {
             println!(
                 "[+] Processing batch {}/{} ({} albums)",
@@ -64,34 +64,19 @@ impl TagsData {
                 chunks.len(),
                 chunk.len()
             );
-
+    
             let batch_start = Instant::now();
             let mut join_set = JoinSet::new();
-
-            // Clone the tags for filtering in parallel tasks
-            let any_tags = self.any.clone();
-            let not_tags = self.not.clone();
-
+    
             for album_name in chunk.iter() {
                 let album_name = album_name.clone();
-                let any_tags = any_tags.clone();
-                let not_tags = not_tags.clone();
-
+    
                 join_set.spawn(async move {
                     match MpdConn::new() {
                         Ok(mut client) => {
-                            // Get all songs in this album
-                            let album_songs =
-                                Self::get_songs_from_album_static(&mut client, &album_name)
-                                    .unwrap_or_else(|_| Vec::new());
-
-                            // Filter the album songs by current tags
-                            Self::filter_songs_by_tags(
-                                album_songs,
-                                &any_tags,
-                                &not_tags,
-                                &mut client,
-                            )
+                            // Get all songs in this album (no tag filtering here)
+                            Self::get_songs_from_album_static(&mut client, &album_name)
+                                .unwrap_or_else(|_| Vec::new())
                         }
                         Err(e) => {
                             eprintln!(
@@ -103,7 +88,7 @@ impl TagsData {
                     }
                 });
             }
-
+    
             // Collect results from this batch
             while let Some(result) = join_set.join_next().await {
                 match result {
@@ -115,57 +100,52 @@ impl TagsData {
                     Err(e) => eprintln!("[!] Task join error: {}", e),
                 }
             }
-
+    
             println!(
                 "[+] Batch {} completed in {:?}",
                 batch_idx + 1,
                 batch_start.elapsed()
             );
         }
-
+    
+        // FOURTH: Now filter the complete album songs by the actual tag playlists
+        println!("[+] Filtering {} album songs by tag playlists", all_album_songs.len());
+        
+        let album_songs_vec: Vec<mpd::Song> = all_album_songs.into_iter().map(|hs| hs.0).collect();
+        let filtered_songs = self.filter_songs_by_not_tags_only(album_songs_vec, mpd_client);
+    
+        let result: HashSet<HashableSong> = filtered_songs.into_iter().map(HashableSong).collect();
+    
         println!(
-            "[+] Parallel album expansion completed in {:?} - {} total songs",
+            "[+] Parallel album expansion completed in {:?} - {} total songs after filtering",
             start_time.elapsed(),
-            all_album_songs.len()
+            result.len()
         );
-
-        all_album_songs
+    
+        result
     }
-
-    // New helper method to filter songs by tags within parallel tasks
-    fn filter_songs_by_tags(
+    
+    // Filter songs by NOT tags only - keep all album songs except explicitly excluded ones
+    fn filter_songs_by_not_tags_only(
+        &self,
         songs: Vec<mpd::Song>,
-        any_tags: &[String],
-        not_tags: &[String],
         mpd_client: &mut MpdConn,
     ) -> Vec<mpd::Song> {
-        let mut allowed_files = HashSet::new();
         let mut forbidden_files = HashSet::new();
-
-        // Get allowed files from "any" tags
-        for tag in any_tags {
-            if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
-                for song in playlist {
-                    allowed_files.insert(song.file);
-                }
-            }
-        }
-
-        // Get forbidden files from "not" tags
-        for tag in not_tags {
+    
+        // Only get forbidden files from "not" tags - ignore "any" tags for filtering
+        for tag in &self.not {
             if let Ok(playlist) = mpd_client.mpd.playlist(tag) {
                 for song in playlist {
                     forbidden_files.insert(song.file);
                 }
             }
         }
-
-        // Filter the songs
+    
+        // Keep all songs except those in "not" playlists
         songs
             .into_iter()
-            .filter(|song| {
-                allowed_files.contains(&song.file) && !forbidden_files.contains(&song.file)
-            })
+            .filter(|song| !forbidden_files.contains(&song.file))
             .collect()
     }
 

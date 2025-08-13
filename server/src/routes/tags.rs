@@ -35,7 +35,17 @@ async fn update_tags(
     tags_update: Json<TagsUpdate>,
     app_state: &rocket::State<AppState>,
 ) -> Json<TagsData> {
-    let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+    // Get connection from pool
+    let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("[!] Error getting MPD connection from pool: {}", e);
+            // Return current tags even if we can't update the queue
+            let locked_tags_data = app_state.tags_data.read().await;
+            return Json(locked_tags_data.clone());
+        }
+    };
+
     let mut locked_song_queue = app_state.song_queue.write().await;
     let mut locked_tags_data = app_state.tags_data.write().await;
 
@@ -60,9 +70,9 @@ async fn update_tags(
         locked_song_queue.invalidate_cache();
     }
 
-    // Use the ultra-fast async method with parallel album expansion
+    // Use the ultra-fast async method with pooled connection
     locked_song_queue
-        .shuffle_and_add_with_cache_async(&*locked_tags_data, &mut *locked_mpd_conn)
+        .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
         .await;
 
     // Request background precompute for the opposite mode
@@ -70,10 +80,6 @@ async fn update_tags(
     locked_song_queue.request_precompute(!current_album_aware);
 
     let res = locked_tags_data.clone();
-    drop(locked_mpd_conn);
-    drop(locked_song_queue);
-    drop(locked_tags_data);
-
     Json(res)
 }
 
@@ -82,7 +88,18 @@ async fn set_album_mode(
     enabled: bool,
     app_state: &rocket::State<AppState>,
 ) -> Json<serde_json::Value> {
-    let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+    // Get connection from pool
+    let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("[!] Error getting MPD connection from pool: {}", e);
+            return Json(serde_json::json!({
+                "error": "Could not get MPD connection",
+                "album_aware": enabled
+            }));
+        }
+    };
+
     let mut locked_song_queue = app_state.song_queue.write().await;
     let locked_tags_data = app_state.tags_data.read().await;
     let mut locked_album_aware = app_state.album_aware.write().await;
@@ -94,7 +111,7 @@ async fn set_album_mode(
 
     // Use async method for instant response with parallel processing
     locked_song_queue
-        .shuffle_and_add_with_cache_async(&*locked_tags_data, &mut *locked_mpd_conn)
+        .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
         .await;
 
     // Request background precompute for the opposite mode to keep both caches fresh
@@ -110,7 +127,19 @@ async fn set_album_mode(
 
 #[post("/album-mode/toggle")]
 async fn toggle_album_mode(app_state: &rocket::State<AppState>) -> Json<serde_json::Value> {
-    let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+    // Get connection from pool
+    let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("[!] Error getting MPD connection from pool: {}", e);
+            let current_mode = *app_state.album_aware.read().await;
+            return Json(serde_json::json!({
+                "error": "Could not get MPD connection",
+                "album_aware": current_mode
+            }));
+        }
+    };
+
     let mut locked_song_queue = app_state.song_queue.write().await;
     let locked_tags_data = app_state.tags_data.read().await;
     let mut locked_album_aware = app_state.album_aware.write().await;
@@ -122,7 +151,7 @@ async fn toggle_album_mode(app_state: &rocket::State<AppState>) -> Json<serde_js
 
     // Use async method for blazing fast response
     locked_song_queue
-        .shuffle_and_add_with_cache_async(&*locked_tags_data, &mut *locked_mpd_conn)
+        .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
         .await;
 
     // Keep both cache types fresh
@@ -160,7 +189,17 @@ async fn cache_stats(app_state: &rocket::State<AppState>) -> Json<serde_json::Va
 // New endpoint to force cache refresh (for testing/admin)
 #[post("/cache/refresh")]
 async fn refresh_cache(app_state: &rocket::State<AppState>) -> Json<serde_json::Value> {
-    let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+    // Get connection from pool
+    let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("[!] Error getting MPD connection from pool: {}", e);
+            return Json(serde_json::json!({
+                "error": "Could not get MPD connection"
+            }));
+        }
+    };
+
     let mut locked_song_queue = app_state.song_queue.write().await;
     let locked_tags_data = app_state.tags_data.read().await;
 
@@ -170,7 +209,7 @@ async fn refresh_cache(app_state: &rocket::State<AppState>) -> Json<serde_json::
     // Invalidate and rebuild both caches
     locked_song_queue.invalidate_cache();
     locked_song_queue
-        .background_precompute(&*locked_tags_data, &mut *locked_mpd_conn)
+        .background_precompute(&*locked_tags_data, pooled_conn.mpd_conn())
         .await;
 
     let elapsed = start_time.elapsed();

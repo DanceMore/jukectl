@@ -1,5 +1,4 @@
 use rocket::serde::json::Json;
-
 use crate::app_state::AppState;
 
 // TODO: refactor this out
@@ -41,16 +40,6 @@ async fn get_queue(
     Json(res)
 }
 
-// TODO: implement JSON return struct, maybe rename to reload to match old API ..?
-// POST /shuffle is new in Rust
-// Ruby used POST /reload
-//
-//    old_pls = arr[0..3]
-//    new_pls = arr[0..3]
-//    res_old = queue_to_filenames(old_pls)
-//    res_new = queue_to_filenames(new_pls)
-//    json({:old => res_old, :new => res_new})
-
 #[derive(rocket::serde::Serialize)]
 struct ShuffleResponse {
     old: Vec<String>,
@@ -59,15 +48,28 @@ struct ShuffleResponse {
 
 #[post("/shuffle")]
 async fn shuffle_songs(app_state: &rocket::State<AppState>) -> Json<ShuffleResponse> {
-    let mut locked_mpd_conn = app_state.mpd_conn.write().await;
+    // Get connection from pool
+    let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("[!] Error getting MPD connection from pool: {}", e);
+            return Json(ShuffleResponse {
+                old: Vec::new(),
+                new: Vec::new(),
+            });
+        }
+    };
+
     let mut locked_song_queue = app_state.song_queue.write().await;
     let locked_tags_data = app_state.tags_data.read().await;
 
     // Capture the old songs before shuffling
     let old_songs = locked_song_queue.head(None);
 
-    // Use the new caching method - this will be MUCH faster on subsequent calls
-    locked_song_queue.shuffle_and_add_with_cache(&*locked_tags_data, &mut *locked_mpd_conn);
+    // Use the new async caching method with pooled connection
+    locked_song_queue
+        .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
+        .await;
 
     // Capture the new songs after shuffling
     let new_songs = locked_song_queue.head(None);
@@ -76,10 +78,6 @@ async fn shuffle_songs(app_state: &rocket::State<AppState>) -> Json<ShuffleRespo
         old: queue_to_filenames(old_songs),
         new: queue_to_filenames(new_songs),
     };
-
-    drop(locked_mpd_conn);
-    drop(locked_song_queue);
-    drop(locked_tags_data);
 
     Json(response)
 }
