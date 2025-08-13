@@ -2,7 +2,7 @@ use mpd::{error::Result, Client};
 use std::env;
 use std::net::ToSocketAddrs;
 
-use log::{debug, info, warn, error};
+use log::{trace, debug, info, warn, error};
 
 pub struct MpdConn {
     pub mpd: Client,
@@ -14,7 +14,7 @@ pub struct MpdConn {
 
 impl MpdConn {
     pub fn new() -> Result<Self> {
-        info!("[!] connecting to mpd...");
+        debug!("[!] connecting to mpd...");
         let (mpd, address, host, port) = MpdConn::connect_mpd()?;
         Ok(MpdConn {
             mpd,
@@ -26,7 +26,7 @@ impl MpdConn {
 
     // New method for creating connections with specific host/port
     pub fn new_with_host(host: &str, port: u16) -> Result<Self> {
-        info!("[!] connecting to mpd at {}:{}...", host, port);
+        debug!("[!] connecting to mpd at {}:{}...", host, port);
 
         // Resolve the host and port
         let address = (host, port)
