@@ -13,7 +13,7 @@ rocket = { version = "0.5.0", features = ["json"] }
 
 mpd = "*"
 tokio = "1.47.1"
-log = "0.4.27"
+log = "0.4.28"
 
 # we use cargo-geiger in the CICD workflows, but we don't
 # **actually** need it listed in dev-deps.... listing it here
@@ -24,6 +24,6 @@ log = "0.4.27"
 [dev-dependencies]
 mockall = "0.13.1"                                  # For creating mock objects
 tokio-test = "0.4.2"                                # For testing async code
-reqwest = { version = "0.11", features = ["json"] } # For API testing
+reqwest = { version = "0.12", features = ["json"] } # For API testing
 #rand = "0.8.5"                                      # For generating random data in tests
 test-log = "0.2.18"                                 # For capturing logs during tests
