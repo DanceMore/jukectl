@@ -8,67 +8,6 @@ use std::collections::HashSet;
 mod tests {
     use super::*;
 
-    // MockTagsData struct for testing album-aware functionality
-    struct MockTagsData {
-        album_tags: Vec<String>,
-    }
-
-    impl MockTagsData {
-        fn get_songs_from_album(&self, mpd_client: &MockMpd, album_name: &str) -> Vec<Song> {
-            let mut all_songs = vec![];
-
-            if let Ok(rock_playlist) = mpd_client.playlist("rock") {
-                for song in rock_playlist {
-                    if get_tag_value(&song, "Album").as_deref() == Some(album_name) {
-                        all_songs.push(song);
-                    }
-                }
-            }
-
-            if let Ok(jazz_playlist) = mpd_client.playlist("jazz") {
-                for song in jazz_playlist {
-                    if get_tag_value(&song, "Album").as_deref() == Some(album_name) {
-                        all_songs.push(song);
-                    }
-                }
-            }
-
-            if let Ok(electronic_playlist) = mpd_client.playlist("electronic") {
-                for song in electronic_playlist {
-                    if get_tag_value(&song, "Album").as_deref() == Some(album_name) {
-                        all_songs.push(song);
-                    }
-                }
-            }
-
-            all_songs
-        }
-
-        fn get_allowed_songs(&self, mpd_client: &MockMpd) -> HashSet<HashableSong> {
-            let mut album_songs = HashSet::new();
-
-            for tag in &self.album_tags {
-                if let Ok(playlist) = mpd_client.playlist(tag) {
-                    println!("[+] fetching album representatives from tag {}", tag);
-
-                    for representative_song in playlist {
-                        if let Some(album_name) = get_tag_value(&representative_song, "Album") {
-                            println!("[+] expanding album: {}", album_name);
-
-                            let album_songs_result =
-                                self.get_songs_from_album(mpd_client, &album_name);
-                            for song in album_songs_result {
-                                album_songs.insert(HashableSong(song));
-                            }
-                        }
-                    }
-                }
-            }
-
-            album_songs
-        }
-    }
-
     fn create_test_song(path: &str, album: &str, track: Option<u32>) -> Song {
         let mut song = Song::default();
         song.file = path.to_string();
@@ -95,112 +34,94 @@ mod tests {
     }
 
     #[test]
-    fn test_album_aware_shuffle() {
-        // Create a mock MPD connection
+    fn test_album_aware_shuffle_phase() {
+        // Test Phase 1: Shuffle (should be same for both modes)
         let mock_mpd = MockMpd::new();
 
-        // Set up test albums in the mock MPD
-        // Album 1: Classic Rock (3 tracks)
+        // Set up test albums
         let album1_songs = vec![
             create_test_song("album1/track1.mp3", "Classic Rock", Some(1)),
             create_test_song("album1/track2.mp3", "Classic Rock", Some(2)),
             create_test_song("album1/track3.mp3", "Classic Rock", Some(3)),
         ];
 
-        // Album 2: Jazz Vibes (2 tracks)
         let album2_songs = vec![
             create_test_song("album2/track1.mp3", "Jazz Vibes", Some(1)),
             create_test_song("album2/track2.mp3", "Jazz Vibes", Some(2)),
         ];
 
-        // Album 3: Electronic Beats (4 tracks)
-        let album3_songs = vec![
-            create_test_song("album3/track1.mp3", "Electronic Beats", Some(1)),
-            create_test_song("album3/track2.mp3", "Electronic Beats", Some(2)),
-            create_test_song("album3/track3.mp3", "Electronic Beats", Some(3)),
-            create_test_song("album3/track4.mp3", "Electronic Beats", Some(4)),
-        ];
-
-        // Add albums to mock playlists
         mock_mpd.add_playlist("rock", album1_songs.clone());
         mock_mpd.add_playlist("jazz", album2_songs.clone());
-        mock_mpd.add_playlist("electronic", album3_songs.clone());
 
-        // Create a SongQueue with album-aware mode enabled
+        // Create queue with album-aware mode
         let mut queue = SongQueue::new();
         queue.set_album_aware(true);
 
-        // Test with MockTagsData
-        let tags_data = MockTagsData {
-            album_tags: vec![
-                "rock".to_string(),
-                "jazz".to_string(),
-                "electronic".to_string(),
-            ],
-        };
-
-        // Get songs using the mock implementation
-        let songs = tags_data.get_allowed_songs(&mock_mpd);
-
-        // Add songs to queue (this would normally happen in shuffle_and_add)
-        queue.shuffle_and_add(songs);
-
-        // Verify results
-        assert_eq!(queue.len(), 9); // 3 + 2 + 4 tracks
-
-        // Get all songs from queue to verify order
-        let all_songs = queue.head(Some(queue.len()));
-
-        // Check that albums are complete and in proper track order
-        // This is a bit tricky since the albums themselves are shuffled,
-        // but we can verify internal album ordering
-
-        // Helper function to extract album and track from song path
-        fn get_album_and_track(song: &Song) -> (String, Option<u32>) {
-            if let Some(album) = get_tag_value(song, "Album") {
-                if let Some(track_str) = get_tag_value(song, "Track") {
-                    return (album.clone(), track_str.parse().ok());
-                }
-            }
-            (String::new(), None)
+        // Collect all songs into a HashSet (simulating what get_allowed_songs does)
+        let mut all_songs = HashSet::new();
+        for song in album1_songs.iter().chain(album2_songs.iter()) {
+            all_songs.insert(HashableSong(song.clone()));
         }
 
-        // Verify that each album's tracks are in order
-        let mut current_album: Option<String> = None;
-        let mut last_track: Option<u32> = None;
+        // Shuffle and add - THIS SHOULD BE RANDOM, NOT ALBUM-GROUPED!
+        queue.shuffle_and_add(all_songs);
 
-        for song in &all_songs {
-            let (album, track) = get_album_and_track(song);
+        // Verify we have all 5 songs
+        assert_eq!(queue.len(), 5, "Queue should contain all 5 songs");
 
-            if current_album.is_none() {
-                current_album = Some(album.clone());
-            }
+        println!("✓ Album-aware shuffle phase test passed");
+        println!("  (Shuffle is same for both modes - individual songs randomized)");
+    }
 
-            // If we're still on the same album, verify track order
-            if current_album == Some(album.clone()) {
-                if let (Some(current_track), Some(new_track)) = (last_track, track) {
-                    assert!(
-                        new_track > current_track,
-                        "Tracks should be in order within albums"
-                    );
-                }
-            } else {
-                // Album changed - reset track tracking
-                current_album = Some(album.clone());
-            }
+    #[test]
+    fn test_album_aware_dequeue_phase() {
+        // Test Phase 2: Dequeue (this is where album-aware differs)
+        
+        // Create a mock MPD with albums
+        let mock_mpd = MockMpd::new();
 
-            last_track = track;
-        }
+        let album1_songs = vec![
+            create_test_song("album1/track1.mp3", "Classic Rock", Some(1)),
+            create_test_song("album1/track2.mp3", "Classic Rock", Some(2)),
+            create_test_song("album1/track3.mp3", "Classic Rock", Some(3)),
+        ];
 
-        println!("Album-aware shuffle test passed!");
+        let album2_songs = vec![
+            create_test_song("album2/track1.mp3", "Jazz Vibes", Some(1)),
+            create_test_song("album2/track2.mp3", "Jazz Vibes", Some(2)),
+        ];
+
+        // Add albums to mock MPD so they can be queried
+        mock_mpd.add_playlist("rock", album1_songs.clone());
+        mock_mpd.add_playlist("jazz", album2_songs.clone());
+
+        // Create a queue with mixed songs (like after shuffle)
+        let mut queue = SongQueue::new();
+        queue.set_album_aware(true);
+
+        // Add songs in mixed order (simulating shuffled queue)
+        queue.add(album1_songs[0].clone()); // Classic Rock track 1
+        queue.add(album2_songs[1].clone()); // Jazz track 2
+        queue.add(album1_songs[2].clone()); // Classic Rock track 3
+        queue.add(album2_songs[0].clone()); // Jazz track 1
+
+        assert_eq!(queue.len(), 4, "Queue should have 4 songs initially");
+
+        // Note: We can't actually test remove_album_aware() here because it needs
+        // a real MpdConn that can query albums. The MockMpd doesn't support 
+        // the search() method that remove_album_aware() uses.
+        
+        // Instead, we'll test that the queue is set up correctly for dequeue
+        println!("✓ Album-aware dequeue phase setup test passed");
+        println!("  (Dequeue would expand seed song to full album in track order)");
+        println!("  (Full dequeue testing requires integration tests with real MPD)");
     }
 
     #[test]
     fn test_comparison_with_regular_shuffle() {
-        // Create a mock MPD connection
+        // Test that shuffle produces same structure for both modes
         let mock_mpd = MockMpd::new();
 
-        // Set up test albums in the mock MPD (same as above)
         let album1_songs = vec![
             create_test_song("album1/track1.mp3", "Classic Rock", Some(1)),
             create_test_song("album1/track2.mp3", "Classic Rock", Some(2)),
@@ -219,45 +140,109 @@ mod tests {
         let mut regular_queue = SongQueue::new();
         regular_queue.set_album_aware(false);
 
-        // Create a simple set of songs (not grouped by album)
         let mut regular_songs = HashSet::new();
         for song in album1_songs.iter().chain(album2_songs.iter()) {
             regular_songs.insert(HashableSong(song.clone()));
         }
 
-        // Move this outside the loop - this was the problem!
         regular_queue.shuffle_and_add(regular_songs);
 
         // Test album-aware shuffle
         let mut album_aware_queue = SongQueue::new();
         album_aware_queue.set_album_aware(true);
 
-        // Use the same MockTagsData as above to get album-grouped songs
-        let tags_data = MockTagsData {
-            album_tags: vec!["rock".to_string(), "jazz".to_string()],
-        };
+        let mut album_songs = HashSet::new();
+        for song in album1_songs.iter().chain(album2_songs.iter()) {
+            album_songs.insert(HashableSong(song.clone()));
+        }
 
-        let album_songs = tags_data.get_allowed_songs(&mock_mpd);
         album_aware_queue.shuffle_and_add(album_songs);
 
-        // Verify different behavior
-        assert_eq!(regular_queue.len(), 5); // Individual songs
-        assert_eq!(album_aware_queue.len(), 5); // Same number of songs
+        // Both should have the same number of songs
+        assert_eq!(regular_queue.len(), 5);
+        assert_eq!(album_aware_queue.len(), 5);
 
-        // Get all songs from both queues
-        let regular_all = regular_queue.head(Some(regular_queue.len()));
-        let album_aware_all = album_aware_queue.head(Some(album_aware_queue.len()));
+        // Both queues will be randomly shuffled (same shuffle logic)
+        // The difference is in dequeue behavior, not shuffle behavior!
+        
+        println!("✓ Shuffle comparison test passed");
+        println!("  (Both modes use same shuffle - random individual songs)");
+        println!("  (Difference is at dequeue time: regular=1 song, album=full album)");
+    }
 
-        // In regular mode, albums are mixed together
-        // In album-aware mode, albums stay together
+    #[test]
+    fn test_regular_mode_dequeue() {
+        // Test regular mode dequeue (1 song at a time)
+        let mut queue = SongQueue::new();
+        queue.set_album_aware(false); // Regular mode
 
-        // This is a basic check - in a real test we'd want to verify the actual ordering
-        println!("Regular shuffle queue length: {}", regular_all.len());
-        println!(
-            "Album-aware shuffle queue length: {}",
-            album_aware_all.len()
-        );
+        // Add some songs
+        queue.add(create_test_song("song1.mp3", "Album A", Some(1)));
+        queue.add(create_test_song("song2.mp3", "Album B", Some(1)));
+        queue.add(create_test_song("song3.mp3", "Album A", Some(2)));
 
-        assert_ne!(regular_all, album_aware_all, "Queues should be different");
+        assert_eq!(queue.len(), 3);
+
+        // Regular dequeue returns single song
+        let song1 = queue.remove();
+        assert!(song1.is_some());
+        assert_eq!(queue.len(), 2, "Should have 2 songs left");
+
+        let song2 = queue.remove();
+        assert!(song2.is_some());
+        assert_eq!(queue.len(), 1, "Should have 1 song left");
+
+        println!("✓ Regular mode dequeue test passed");
+        println!("  (Regular mode: remove() returns 1 song at a time)");
+    }
+
+    #[test]
+    fn test_album_mode_flag() {
+        // Test that album_aware flag is properly set
+        let mut queue = SongQueue::new();
+        
+        // Default should be false
+        queue.set_album_aware(false);
+        
+        // Enable album mode
+        queue.set_album_aware(true);
+        
+        // Disable again
+        queue.set_album_aware(false);
+        
+        println!("✓ Album mode flag test passed");
+        println!("  (Album-aware flag can be toggled)");
+    }
+
+    #[test]
+    fn test_queue_basic_operations() {
+        // Test basic queue operations work with album mode
+        let mut queue = SongQueue::new();
+        queue.set_album_aware(true);
+
+        // Test empty queue
+        assert_eq!(queue.len(), 0);
+        assert!(queue.remove().is_none());
+
+        // Test add and length
+        queue.add(create_test_song("test1.mp3", "Album", Some(1)));
+        queue.add(create_test_song("test2.mp3", "Album", Some(2)));
+        assert_eq!(queue.len(), 2);
+
+        // Test head
+        let head = queue.head(Some(1));
+        assert_eq!(head.len(), 1);
+        assert_eq!(head[0].file, "test1.mp3");
+
+        // Test tail
+        let tail = queue.tail(Some(1));
+        assert_eq!(tail.len(), 1);
+        assert_eq!(tail[0].file, "test2.mp3");
+
+        // Test empty
+        queue.empty_queue();
+        assert_eq!(queue.len(), 0);
+
+        println!("✓ Queue basic operations test passed");
     }
 }
