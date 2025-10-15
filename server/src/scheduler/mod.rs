@@ -118,7 +118,6 @@ async fn scheduler_mainbody(app_state: AppState) {
             );
         }
 
-        // No need to explicitly drop - pooled_conn will return to pool automatically
         drop(locked_song_queue);
         drop(locked_tags_data);
 
