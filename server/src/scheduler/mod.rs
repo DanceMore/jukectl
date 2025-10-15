@@ -9,7 +9,6 @@ use log::{trace, debug, info, warn, error};
 pub async fn start_scheduler(app_state: AppState) {
     info!("[+] Starting enhanced scheduler with background precomputation...");
 
-    // Start both the main scheduler and background precompute task
     let app_state_clone = app_state.clone();
     tokio::spawn(scheduler_mainbody(app_state));
     tokio::spawn(background_precompute_task(app_state_clone));
@@ -22,14 +21,12 @@ async fn scheduler_mainbody(app_state: AppState) {
         scheduler_cycle += 1;
 
         if scheduler_cycle % 20 == 0 {
-            // Every minute (3s * 20)
             trace!("[-] scheduler cycle #{}", scheduler_cycle);
         } else {
             print!(".");
             let _ = std::io::stdout().flush();
         }
 
-        // Get connection from pool instead of locking single connection
         let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
             Ok(conn) => conn,
             Err(e) => {
@@ -45,8 +42,6 @@ async fn scheduler_mainbody(app_state: AppState) {
         // Check if SongQueue is empty and refill if needed
         if locked_song_queue.len() == 0 {
             info!("[!] scheduler sees an empty queue, refilling with cached data...");
-
-            // Use the ultra-fast async method for instant refills
             locked_song_queue
                 .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
                 .await;
@@ -59,7 +54,7 @@ async fn scheduler_mainbody(app_state: AppState) {
             Ok(queue) => {
                 let now_playing_len = queue.len();
                 if now_playing_len < 2 {
-                    // THIS IS THE KEY FIX: Check album-aware mode!
+                    // Check album-aware mode to determine dequeue behavior
                     let album_aware = *app_state.album_aware.read().await;
                     
                     if album_aware {
@@ -71,7 +66,7 @@ async fn scheduler_mainbody(app_state: AppState) {
                                 if let Err(error) = pooled_conn.mpd_conn().mpd.push(song.clone()) {
                                     eprintln!("[!] Error pushing song to MPD: {}", error);
                                 } else {
-                                    info!("[+] Added: {}", song.file);
+                                    debug!("[+] Added: {}", song.file);
                                 }
                             }
                             
@@ -91,30 +86,23 @@ async fn scheduler_mainbody(app_state: AppState) {
 
                     // Request background precompute if queue is getting low
                     if locked_song_queue.len() < 50 {
-                        locked_song_queue.request_precompute(album_aware);
+                        locked_song_queue.request_precompute();
                         info!("[+] Queue low, requested background precompute");
                     }
                 }
             }
             Err(error) => {
                 eprintln!("[!] Error getting MPD queue: {}", error);
-                // With pool, we don't need to reconnect manually - just let the connection drop
-                // and get a fresh one next iteration
             }
         }
 
         // Print cache stats periodically
         if scheduler_cycle % 100 == 0 {
-            // Every 5 minutes
             let (hits, misses, hit_rate) = locked_song_queue.cache_stats();
-            let (regular_valid, album_valid) = locked_song_queue.has_valid_cache(&*locked_tags_data);
+            let cache_valid = locked_song_queue.has_valid_cache(&*locked_tags_data);
             info!(
-                "[+] Cache stats - Hits: {}, Misses: {}, Hit rate: {:.1}%",
-                hits, misses, hit_rate
-            );
-            info!(
-                "[+] Cache validity - Regular: {}, Album: {}",
-                regular_valid, album_valid
+                "[+] Cache stats - Hits: {}, Misses: {}, Hit rate: {:.1}%, Valid: {}",
+                hits, misses, hit_rate, cache_valid
             );
         }
 
@@ -127,21 +115,16 @@ async fn scheduler_mainbody(app_state: AppState) {
 
 async fn background_precompute_task(app_state: AppState) {
     info!("[+] Background precompute task started");
-
-    // Wait a bit before starting to let the main system initialize
     tokio::time::sleep(Duration::from_secs(10)).await;
 
     let mut cycle = 0u64;
 
     loop {
         cycle += 1;
-
-        // Run background precompute every 30 seconds
         tokio::time::sleep(Duration::from_secs(30)).await;
 
-        warn!("[+] Background precompute cycle #{}", cycle);
+        debug!("[+] Background precompute cycle #{}", cycle);
 
-        // Get connection from pool
         let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
             Ok(conn) => conn,
             Err(e) => {
@@ -156,7 +139,6 @@ async fn background_precompute_task(app_state: AppState) {
         let mut locked_song_queue = app_state.song_queue.write().await;
         let locked_tags_data = app_state.tags_data.read().await;
 
-        // Perform background precomputation
         let precompute_start = std::time::Instant::now();
         locked_song_queue
             .background_precompute(&*locked_tags_data, pooled_conn.mpd_conn())
@@ -164,7 +146,6 @@ async fn background_precompute_task(app_state: AppState) {
 
         let precompute_time = precompute_start.elapsed();
         if precompute_time.as_millis() > 100 {
-            // Only log if it took significant time
             info!(
                 "[+] Background precompute completed in {:?}",
                 precompute_time

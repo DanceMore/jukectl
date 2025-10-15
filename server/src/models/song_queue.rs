@@ -27,12 +27,12 @@ impl CacheEntry {
     }
 }
 
-// Define your enhanced queue type with dual caching
+// Define your enhanced queue type with caching
 pub struct SongQueue {
     inner: VecDeque<mpd::Song>,
     album_aware: bool,
 
-    // Single cache system (no need for dual cache - shuffle is the same!)
+    // Single cache system (shuffle is the same for both modes!)
     cache: Option<CacheEntry>,
 
     // Background precompute flag
@@ -69,8 +69,7 @@ impl SongQueue {
     }
 
     // Mark that we need background precomputation
-    // album_mode parameter kept for API compatibility but ignored (same cache for both modes now)
-    pub fn request_precompute(&mut self, _album_mode: bool) {
+    pub fn request_precompute(&mut self) {
         self.precompute_pending = true;
         println!("[+] Cache precompute requested");
     }
@@ -313,13 +312,11 @@ impl SongQueue {
         (self.cache_hits, self.cache_misses, hit_rate)
     }
 
-    pub fn has_valid_cache(&self, tags_data: &crate::models::tags_data::TagsData) -> (bool, bool) {
+    // Simplified - single cache, single boolean
+    pub fn has_valid_cache(&self, tags_data: &crate::models::tags_data::TagsData) -> bool {
         let tags_hash = Self::hash_tags(tags_data);
-        let valid = self
-            .cache
+        self.cache
             .as_ref()
-            .map_or(false, |c| c.is_valid(tags_hash, self.cache_ttl));
-        // Return same value for both since we only have one cache now
-        (valid, valid)
+            .map_or(false, |c| c.is_valid(tags_hash, self.cache_ttl))
     }
 }

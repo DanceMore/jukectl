@@ -70,14 +70,13 @@ async fn update_tags(
         locked_song_queue.invalidate_cache();
     }
 
-    // Use the ultra-fast async method with pooled connection
+    // Use the async method with pooled connection
     locked_song_queue
         .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
         .await;
 
-    // Request background precompute for the opposite mode
-    let current_album_aware = *app_state.album_aware.read().await;
-    locked_song_queue.request_precompute(!current_album_aware);
+    // Request background precompute
+    locked_song_queue.request_precompute();
 
     let res = locked_tags_data.clone();
     Json(res)
@@ -109,13 +108,13 @@ async fn set_album_mode(
 
     println!("[+] album-aware mode set to: {}", enabled);
 
-    // Use async method for instant response with parallel processing
+    // Use async method for instant response
     locked_song_queue
         .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
         .await;
 
-    // Request background precompute for the opposite mode to keep both caches fresh
-    locked_song_queue.request_precompute(!enabled);
+    // Request background precompute
+    locked_song_queue.request_precompute();
 
     let response = serde_json::json!({
         "album_aware": enabled,
@@ -149,13 +148,13 @@ async fn toggle_album_mode(app_state: &rocket::State<AppState>) -> Json<serde_js
 
     println!("[+] album-aware mode toggled to: {}", *locked_album_aware);
 
-    // Use async method for blazing fast response
+    // Use async method
     locked_song_queue
         .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
         .await;
 
-    // Keep both cache types fresh
-    locked_song_queue.request_precompute(!*locked_album_aware);
+    // Request background precompute
+    locked_song_queue.request_precompute();
 
     let response = serde_json::json!({
         "album_aware": *locked_album_aware,
@@ -165,28 +164,28 @@ async fn toggle_album_mode(app_state: &rocket::State<AppState>) -> Json<serde_js
     Json(response)
 }
 
-// New endpoint for cache statistics and health monitoring
+// Updated cache statistics endpoint
 #[get("/cache-stats")]
 async fn cache_stats(app_state: &rocket::State<AppState>) -> Json<serde_json::Value> {
     let locked_song_queue = app_state.song_queue.read().await;
     let locked_tags_data = app_state.tags_data.read().await;
 
     let (hits, misses, hit_rate) = locked_song_queue.cache_stats();
-    let (regular_valid, album_valid) = locked_song_queue.has_valid_cache(&*locked_tags_data);
+    let cache_valid = locked_song_queue.has_valid_cache(&*locked_tags_data);
     let queue_length = locked_song_queue.len();
+    let album_aware = *app_state.album_aware.read().await;
 
     Json(serde_json::json!({
         "cache_hits": hits,
         "cache_misses": misses,
         "hit_rate_percent": hit_rate,
-        "regular_cache_valid": regular_valid,
-        "album_cache_valid": album_valid,
+        "cache_valid": cache_valid,
         "queue_length": queue_length,
+        "album_aware_enabled": album_aware,
         "status": if hit_rate > 80.0 { "excellent" } else if hit_rate > 60.0 { "good" } else { "needs_optimization" }
     }))
 }
 
-// New endpoint to force cache refresh (for testing/admin)
 #[post("/cache/refresh")]
 async fn refresh_cache(app_state: &rocket::State<AppState>) -> Json<serde_json::Value> {
     // Get connection from pool
@@ -206,7 +205,7 @@ async fn refresh_cache(app_state: &rocket::State<AppState>) -> Json<serde_json::
     println!("[+] Manual cache refresh requested");
     let start_time = std::time::Instant::now();
 
-    // Invalidate and rebuild both caches
+    // Invalidate and rebuild cache
     locked_song_queue.invalidate_cache();
     locked_song_queue
         .background_precompute(&*locked_tags_data, pooled_conn.mpd_conn())
