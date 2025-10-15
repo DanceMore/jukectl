@@ -2,7 +2,7 @@ use mpd::{error::Result, Client};
 use std::env;
 use std::net::ToSocketAddrs;
 
-use log::{trace, debug, info, warn, error};
+use log::{debug, error, info, trace, warn};
 
 pub struct MpdConn {
     pub mpd: Client,

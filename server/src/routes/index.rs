@@ -13,7 +13,7 @@ fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
 #[get("/")]
 pub async fn index(app_state: &State<AppState>) -> Json<Vec<String>> {
     println!("[-] inside index method");
-    
+
     // Get connection from pool instead of locking single connection
     let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
         Ok(conn) => conn,

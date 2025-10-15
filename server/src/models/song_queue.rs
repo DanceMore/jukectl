@@ -60,10 +60,7 @@ impl SongQueue {
 
     pub fn set_album_aware(&mut self, album_aware: bool) {
         if self.album_aware != album_aware {
-            println!(
-                "[+] Album-aware mode changed to {}",
-                album_aware
-            );
+            println!("[+] Album-aware mode changed to {}", album_aware);
         }
         self.album_aware = album_aware;
     }
@@ -216,16 +213,19 @@ impl SongQueue {
         let seed_song = self.inner.pop_front()?;
 
         // Get the album name from the seed song
-        let album_name = Self::get_tag_value(&seed_song, "Album")
-            .unwrap_or_else(|| "Unknown Album".to_string());
+        let album_name =
+            Self::get_tag_value(&seed_song, "Album").unwrap_or_else(|| "Unknown Album".to_string());
 
-        println!("[+] Album-aware dequeue: Loading full album '{}'", album_name);
+        println!(
+            "[+] Album-aware dequeue: Loading full album '{}'",
+            album_name
+        );
 
         // Query MPD for all songs from this album using proper Query API
         let album_songs = {
             let mut query = mpd::Query::new();
             query.and(mpd::Term::Tag("album".into()), album_name.as_str());
-            
+
             match mpd_client.mpd.search(&query, None) {
                 Ok(songs) => songs,
                 Err(e) => {

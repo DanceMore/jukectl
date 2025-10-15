@@ -5,7 +5,7 @@ use tokio::sync::{Mutex, Semaphore};
 
 use crate::mpd_conn::mpd_conn::MpdConn;
 
-use log::{trace, debug, info, warn, error};
+use log::{debug, error, info, trace, warn};
 
 pub struct MpdConnectionPool {
     connections: Arc<Mutex<VecDeque<MpdConn>>>,

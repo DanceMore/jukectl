@@ -1,5 +1,5 @@
-use rocket::serde::json::Json;
 use crate::app_state::AppState;
+use rocket::serde::json::Json;
 
 // TODO: refactor this out
 fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {

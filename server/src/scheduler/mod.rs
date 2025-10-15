@@ -4,7 +4,7 @@ use std::io::Write;
 
 use crate::app_state::AppState;
 
-use log::{trace, debug, info, warn, error};
+use log::{debug, error, info, trace, warn};
 
 pub async fn start_scheduler(app_state: AppState) {
     info!("[+] Starting enhanced scheduler with background precomputation...");
@@ -56,12 +56,17 @@ async fn scheduler_mainbody(app_state: AppState) {
                 if now_playing_len < 2 {
                     // Check album-aware mode to determine dequeue behavior
                     let album_aware = *app_state.album_aware.read().await;
-                    
+
                     if album_aware {
                         // Album-aware mode: dequeue full album
-                        if let Some(album_songs) = locked_song_queue.remove_album_aware(pooled_conn.mpd_conn()) {
-                            info!("[+] Album-aware: Adding {} songs from album", album_songs.len());
-                            
+                        if let Some(album_songs) =
+                            locked_song_queue.remove_album_aware(pooled_conn.mpd_conn())
+                        {
+                            info!(
+                                "[+] Album-aware: Adding {} songs from album",
+                                album_songs.len()
+                            );
+
                             for song in album_songs {
                                 if let Err(error) = pooled_conn.mpd_conn().mpd.push(song.clone()) {
                                     eprintln!("[!] Error pushing song to MPD: {}", error);
@@ -69,7 +74,7 @@ async fn scheduler_mainbody(app_state: AppState) {
                                     debug!("[+] Added: {}", song.file);
                                 }
                             }
-                            
+
                             let _ = pooled_conn.mpd_conn().mpd.play();
                         }
                     } else {

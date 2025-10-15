@@ -1,5 +1,5 @@
-use rocket::serde::json::Json;
 use crate::app_state::AppState;
+use rocket::serde::json::Json;
 
 #[derive(serde::Deserialize)]
 struct SongTagsUpdate {

@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn test_album_aware_dequeue_phase() {
         // Test Phase 2: Dequeue (this is where album-aware differs)
-        
+
         // Create a mock MPD with albums
         let mock_mpd = MockMpd::new();
 
@@ -108,9 +108,9 @@ mod tests {
         assert_eq!(queue.len(), 4, "Queue should have 4 songs initially");
 
         // Note: We can't actually test remove_album_aware() here because it needs
-        // a real MpdConn that can query albums. The MockMpd doesn't support 
+        // a real MpdConn that can query albums. The MockMpd doesn't support
         // the search() method that remove_album_aware() uses.
-        
+
         // Instead, we'll test that the queue is set up correctly for dequeue
         println!("✓ Album-aware dequeue phase setup test passed");
         println!("  (Dequeue would expand seed song to full album in track order)");
@@ -164,7 +164,7 @@ mod tests {
 
         // Both queues will be randomly shuffled (same shuffle logic)
         // The difference is in dequeue behavior, not shuffle behavior!
-        
+
         println!("✓ Shuffle comparison test passed");
         println!("  (Both modes use same shuffle - random individual songs)");
         println!("  (Difference is at dequeue time: regular=1 song, album=full album)");
@@ -200,16 +200,16 @@ mod tests {
     fn test_album_mode_flag() {
         // Test that album_aware flag is properly set
         let mut queue = SongQueue::new();
-        
+
         // Default should be false
         queue.set_album_aware(false);
-        
+
         // Enable album mode
         queue.set_album_aware(true);
-        
+
         // Disable again
         queue.set_album_aware(false);
-        
+
         println!("✓ Album mode flag test passed");
         println!("  (Album-aware flag can be toggled)");
     }
