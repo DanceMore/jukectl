@@ -32,13 +32,11 @@ pub struct SongQueue {
     inner: VecDeque<mpd::Song>,
     album_aware: bool,
 
-    // Dual cache system
-    regular_cache: Option<CacheEntry>,
-    album_cache: Option<CacheEntry>,
+    // Single cache system (no need for dual cache - shuffle is the same!)
+    cache: Option<CacheEntry>,
 
-    // Background precompute flags
-    regular_precompute_pending: bool,
-    album_precompute_pending: bool,
+    // Background precompute flag
+    precompute_pending: bool,
 
     cache_ttl: Duration,
 
@@ -52,10 +50,8 @@ impl SongQueue {
         Self {
             inner: VecDeque::new(),
             album_aware: false,
-            regular_cache: None,
-            album_cache: None,
-            regular_precompute_pending: false,
-            album_precompute_pending: false,
+            cache: None,
+            precompute_pending: false,
             cache_ttl: Duration::from_secs(600), // 10 minute cache
             cache_hits: 0,
             cache_misses: 0,
@@ -65,7 +61,7 @@ impl SongQueue {
     pub fn set_album_aware(&mut self, album_aware: bool) {
         if self.album_aware != album_aware {
             println!(
-                "[+] Album-aware mode changed to {}, invalidating caches",
+                "[+] Album-aware mode changed to {}",
                 album_aware
             );
         }
@@ -73,20 +69,15 @@ impl SongQueue {
     }
 
     // Mark that we need background precomputation
-    pub fn request_precompute(&mut self, album_mode: bool) {
-        if album_mode {
-            self.album_precompute_pending = true;
-            println!("[+] Album cache precompute requested");
-        } else {
-            self.regular_precompute_pending = true;
-            println!("[+] Regular cache precompute requested");
-        }
+    // album_mode parameter kept for API compatibility but ignored (same cache for both modes now)
+    pub fn request_precompute(&mut self, _album_mode: bool) {
+        self.precompute_pending = true;
+        println!("[+] Cache precompute requested");
     }
 
     pub fn invalidate_cache(&mut self) {
-        self.regular_cache = None;
-        self.album_cache = None;
-        println!("[+] All caches invalidated");
+        self.cache = None;
+        println!("[+] Cache invalidated");
     }
 
     // Simple hash function for tags
@@ -100,106 +91,45 @@ impl SongQueue {
         hasher.finish()
     }
 
-    // Enhanced hash function that includes album_aware mode
-    fn hash_tags_with_mode(
-        tags_data: &crate::models::tags_data::TagsData,
-        album_aware: bool,
-    ) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        tags_data.any.hash(&mut hasher);
-        tags_data.not.hash(&mut hasher);
-        album_aware.hash(&mut hasher); // Include album mode in hash!
-        hasher.finish()
-    }
-
-    // Updated cache validation
-    //fn is_cache_valid(&self, tags_data: &crate::models::tags_data::TagsData) -> bool {
-    //    let current_hash = Self::hash_tags_with_mode(tags_data, self.album_aware);
-
-    //    if self.album_aware {
-    //        self.album_cache
-    //            .as_ref()
-    //            .map_or(false, |c| c.is_valid(current_hash, self.cache_ttl))
-    //    } else {
-    //        self.regular_cache
-    //            .as_ref()
-    //            .map_or(false, |c| c.is_valid(current_hash, self.cache_ttl))
-    //    }
-    //}
-
-    // Fixed shuffle_and_add_with_cache_async
+    // Main shuffle method with caching
     pub async fn shuffle_and_add_with_cache_async(
         &mut self,
         tags_data: &crate::models::tags_data::TagsData,
         mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
     ) {
         let start_time = Instant::now();
-        let tags_hash = Self::hash_tags_with_mode(tags_data, self.album_aware);
+        let tags_hash = Self::hash_tags(tags_data);
 
-        println!(
-            "[+] Cache lookup - album_aware: {}, hash: {}",
-            self.album_aware, tags_hash
-        );
+        println!("[+] Cache lookup - hash: {}", tags_hash);
 
-        let songs = if self.album_aware {
-            if let Some(ref cache) = self.album_cache {
-                if cache.is_valid(tags_hash, self.cache_ttl) {
-                    self.cache_hits += 1;
-                    println!(
-                        "[+] CACHE HIT: Using cached album-aware songs ({} songs)",
-                        cache.songs.len()
-                    );
-                    cache.songs.clone()
-                } else {
-                    self.cache_misses += 1;
-                    println!("[+] CACHE MISS: Album cache invalid/stale, rebuilding...");
-                    let fresh_songs = tags_data.get_album_aware_songs_parallel(mpd_client).await;
-                    self.album_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-                    fresh_songs
-                }
+        // Check cache validity
+        let songs = if let Some(ref cache) = self.cache {
+            if cache.is_valid(tags_hash, self.cache_ttl) {
+                self.cache_hits += 1;
+                println!(
+                    "[+] CACHE HIT: Using cached songs ({} songs)",
+                    cache.songs.len()
+                );
+                cache.songs.clone()
             } else {
                 self.cache_misses += 1;
-                println!("[+] CACHE MISS: Building album-aware cache...");
-                let fresh_songs = tags_data.get_album_aware_songs_parallel(mpd_client).await;
-                self.album_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+                println!("[+] CACHE MISS: Cache invalid/stale, rebuilding...");
+                let fresh_songs = tags_data.get_allowed_songs(mpd_client);
+                self.cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
                 fresh_songs
             }
         } else {
-            if let Some(ref cache) = self.regular_cache {
-                if cache.is_valid(tags_hash, self.cache_ttl) {
-                    self.cache_hits += 1;
-                    println!(
-                        "[+] CACHE HIT: Using cached regular songs ({} songs)",
-                        cache.songs.len()
-                    );
-                    cache.songs.clone()
-                } else {
-                    self.cache_misses += 1;
-                    println!("[+] CACHE MISS: Regular cache invalid/stale, rebuilding...");
-                    let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-                    self.regular_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-                    fresh_songs
-                }
-            } else {
-                self.cache_misses += 1;
-                println!("[+] CACHE MISS: Building regular cache...");
-                let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-                self.regular_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-                fresh_songs
-            }
+            self.cache_misses += 1;
+            println!("[+] CACHE MISS: Building cache...");
+            let fresh_songs = tags_data.get_allowed_songs(mpd_client);
+            self.cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+            fresh_songs
         };
 
         println!("[+] Using {} songs for shuffle", songs.len());
 
-        // Use existing shuffle logic
-        if self.album_aware {
-            self.shuffle_and_add_album_aware(songs);
-        } else {
-            self.shuffle_and_add_regular(songs);
-        }
+        // Shuffle is the same for both modes!
+        self.shuffle_and_add(songs);
 
         println!("[+] Total shuffle_and_add took: {:?}", start_time.elapsed());
     }
@@ -213,59 +143,30 @@ impl SongQueue {
         let start_time = Instant::now();
         let tags_hash = Self::hash_tags(tags_data);
 
-        let songs = if self.album_aware {
-            if let Some(ref cache) = self.album_cache {
-                if cache.is_valid(tags_hash, self.cache_ttl) {
-                    self.cache_hits += 1;
-                    println!(
-                        "[+] CACHE HIT: Using cached album-aware songs ({} songs)",
-                        cache.songs.len()
-                    );
-                    cache.songs.clone()
-                } else {
-                    self.cache_misses += 1;
-                    println!("[+] CACHE MISS: Album cache invalid, using sync refresh...");
-                    let fresh_songs = tags_data.get_album_aware_songs(mpd_client);
-                    self.album_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-                    fresh_songs
-                }
+        let songs = if let Some(ref cache) = self.cache {
+            if cache.is_valid(tags_hash, self.cache_ttl) {
+                self.cache_hits += 1;
+                println!(
+                    "[+] CACHE HIT: Using cached songs ({} songs)",
+                    cache.songs.len()
+                );
+                cache.songs.clone()
             } else {
                 self.cache_misses += 1;
-                println!("[+] CACHE MISS: Building album-aware cache...");
-                let fresh_songs = tags_data.get_album_aware_songs(mpd_client);
-                self.album_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+                println!("[+] CACHE MISS: Cache invalid, refreshing...");
+                let fresh_songs = tags_data.get_allowed_songs(mpd_client);
+                self.cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
                 fresh_songs
             }
         } else {
-            if let Some(ref cache) = self.regular_cache {
-                if cache.is_valid(tags_hash, self.cache_ttl) {
-                    self.cache_hits += 1;
-                    println!(
-                        "[+] CACHE HIT: Using cached regular songs ({} songs)",
-                        cache.songs.len()
-                    );
-                    cache.songs.clone()
-                } else {
-                    self.cache_misses += 1;
-                    println!("[+] CACHE MISS: Regular cache invalid, refreshing...");
-                    let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-                    self.regular_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-                    fresh_songs
-                }
-            } else {
-                self.cache_misses += 1;
-                println!("[+] CACHE MISS: Building regular cache...");
-                let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-                self.regular_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-                fresh_songs
-            }
+            self.cache_misses += 1;
+            println!("[+] CACHE MISS: Building cache...");
+            let fresh_songs = tags_data.get_allowed_songs(mpd_client);
+            self.cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+            fresh_songs
         };
 
-        if self.album_aware {
-            self.shuffle_and_add_album_aware(songs);
-        } else {
-            self.shuffle_and_add_regular(songs);
-        }
+        self.shuffle_and_add(songs);
 
         println!("[+] Sync shuffle_and_add took: {:?}", start_time.elapsed());
     }
@@ -278,52 +179,79 @@ impl SongQueue {
     ) {
         let tags_hash = Self::hash_tags(tags_data);
 
-        // Check if regular precompute is needed
-        if self.regular_precompute_pending
+        // Check if precompute is needed
+        if self.precompute_pending
             || self
-                .regular_cache
+                .cache
                 .as_ref()
                 .map_or(true, |c| !c.is_valid(tags_hash, self.cache_ttl))
         {
-            println!("[+] Background: Precomputing regular cache...");
+            println!("[+] Background: Precomputing cache...");
             let start = Instant::now();
             let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-            self.regular_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-            self.regular_precompute_pending = false;
+            self.cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
+            self.precompute_pending = false;
             println!(
-                "[+] Background: Regular cache precomputed in {:?} ({} songs)",
-                start.elapsed(),
-                fresh_songs.len()
-            );
-        }
-
-        // Check if album precompute is needed
-        if self.album_precompute_pending
-            || self
-                .album_cache
-                .as_ref()
-                .map_or(true, |c| !c.is_valid(tags_hash, self.cache_ttl))
-        {
-            println!("[+] Background: Precomputing album cache with parallel expansion...");
-            let start = Instant::now();
-            let fresh_songs = tags_data.get_album_aware_songs_parallel(mpd_client).await;
-            self.album_cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-            self.album_precompute_pending = false;
-            println!(
-                "[+] Background: Album cache precomputed in {:?} ({} songs)",
+                "[+] Background: Cache precomputed in {:?} ({} songs)",
                 start.elapsed(),
                 fresh_songs.len()
             );
         }
     }
 
-    // Rest of your existing methods remain the same
     pub fn add(&mut self, song: mpd::Song) {
         self.inner.push_back(song);
     }
 
+    // Regular remove - pops one song
     pub fn remove(&mut self) -> Option<mpd::Song> {
         self.inner.pop_front()
+    }
+
+    // Album-aware remove - pops one song, returns full album
+    pub fn remove_album_aware(
+        &mut self,
+        mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
+    ) -> Option<Vec<mpd::Song>> {
+        // Pop the seed song
+        let seed_song = self.inner.pop_front()?;
+
+        // Get the album name from the seed song
+        let album_name = Self::get_tag_value(&seed_song, "Album")
+            .unwrap_or_else(|| "Unknown Album".to_string());
+
+        println!("[+] Album-aware dequeue: Loading full album '{}'", album_name);
+
+        // Query MPD for all songs from this album using proper Query API
+        let album_songs = {
+            let mut query = mpd::Query::new();
+            query.and(mpd::Term::Tag("album".into()), album_name.as_str());
+            
+            match mpd_client.mpd.search(&query, None) {
+                Ok(songs) => songs,
+                Err(e) => {
+                    eprintln!("[-] Error querying album songs: {}", e);
+                    // Fallback: return just the seed song
+                    return Some(vec![seed_song]);
+                }
+            }
+        };
+
+        // Sort by track number
+        let mut sorted_songs = album_songs;
+        sorted_songs.sort_by(|a, b| {
+            let track_a = Self::get_tag_value(a, "Track")
+                .and_then(|t| t.parse::<u32>().ok())
+                .unwrap_or(0);
+            let track_b = Self::get_tag_value(b, "Track")
+                .and_then(|t| t.parse::<u32>().ok())
+                .unwrap_or(0);
+            track_a.cmp(&track_b)
+        });
+
+        println!("[+] Loaded {} tracks from album", sorted_songs.len());
+
+        Some(sorted_songs)
     }
 
     pub fn len(&self) -> usize {
@@ -349,15 +277,8 @@ impl SongQueue {
         self.inner.clear();
     }
 
+    // Simplified shuffle - same for both modes!
     pub fn shuffle_and_add(&mut self, songs: HashSet<HashableSong>) {
-        if self.album_aware {
-            self.shuffle_and_add_album_aware(songs);
-        } else {
-            self.shuffle_and_add_regular(songs);
-        }
-    }
-
-    fn shuffle_and_add_regular(&mut self, songs: HashSet<HashableSong>) {
         let start_time = std::time::Instant::now();
         self.inner.reserve(songs.len());
         self.empty_queue();
@@ -371,7 +292,7 @@ impl SongQueue {
         }
 
         let elapsed_time = start_time.elapsed();
-        println!("[-] shuffle_and_add_regular took: {:?}", elapsed_time);
+        println!("[+] Shuffle and add took: {:?}", elapsed_time);
     }
 
     fn get_tag_value(song: &mpd::Song, tag_name: &str) -> Option<String> {
@@ -379,48 +300,6 @@ impl SongQueue {
             .iter()
             .find(|(key, _)| key == tag_name)
             .map(|(_, value)| value.clone())
-    }
-
-    fn shuffle_and_add_album_aware(&mut self, songs: HashSet<HashableSong>) {
-        let start_time = std::time::Instant::now();
-        self.empty_queue();
-
-        let mut albums: HashMap<String, Vec<mpd::Song>> = HashMap::new();
-
-        for hashable_song in songs {
-            let song = mpd::Song::from(hashable_song);
-            let album_name =
-                Self::get_tag_value(&song, "Album").unwrap_or_else(|| "Unknown Album".to_string());
-
-            albums.entry(album_name).or_insert_with(Vec::new).push(song);
-        }
-
-        for (album_name, album_songs) in albums.iter_mut() {
-            album_songs.sort_by(|a, b| {
-                let track_a = Self::get_tag_value(a, "Track")
-                    .and_then(|t| t.parse::<u32>().ok())
-                    .unwrap_or(0);
-                let track_b = Self::get_tag_value(b, "Track")
-                    .and_then(|t| t.parse::<u32>().ok())
-                    .unwrap_or(0);
-                track_a.cmp(&track_b)
-            });
-        }
-
-        let mut album_names: Vec<String> = albums.keys().cloned().collect();
-        let mut rng = rand::rng();
-        album_names.shuffle(&mut rng);
-
-        for album_name in album_names {
-            if let Some(album_songs) = albums.remove(&album_name) {
-                for song in album_songs {
-                    self.add(song);
-                }
-            }
-        }
-
-        let elapsed_time = start_time.elapsed();
-        println!("[-] album-aware shuffle_and_add took: {:?}", elapsed_time);
     }
 
     // Performance monitoring methods
@@ -436,14 +315,11 @@ impl SongQueue {
 
     pub fn has_valid_cache(&self, tags_data: &crate::models::tags_data::TagsData) -> (bool, bool) {
         let tags_hash = Self::hash_tags(tags_data);
-        let regular_valid = self
-            .regular_cache
+        let valid = self
+            .cache
             .as_ref()
             .map_or(false, |c| c.is_valid(tags_hash, self.cache_ttl));
-        let album_valid = self
-            .album_cache
-            .as_ref()
-            .map_or(false, |c| c.is_valid(tags_hash, self.cache_ttl));
-        (regular_valid, album_valid)
+        // Return same value for both since we only have one cache now
+        (valid, valid)
     }
 }

@@ -6,7 +6,6 @@ use crate::app_state::AppState;
 
 use log::{trace, debug, info, warn, error};
 
-
 pub async fn start_scheduler(app_state: AppState) {
     info!("[+] Starting enhanced scheduler with background precomputation...");
 
@@ -53,27 +52,47 @@ async fn scheduler_mainbody(app_state: AppState) {
                 .await;
         }
 
-        // Main MPD queue management - use pooled connection
+        // Main MPD queue management
         let mpd_queue_result = pooled_conn.mpd_conn().mpd.queue();
 
         match mpd_queue_result {
             Ok(queue) => {
                 let now_playing_len = queue.len();
                 if now_playing_len < 2 {
-                    if let Some(song) = locked_song_queue.remove() {
-                        if let Err(error) = pooled_conn.mpd_conn().mpd.push(song.clone()) {
-                            eprintln!("[!] Error pushing song to MPD: {}", error);
-                        } else {
-                            info!("[+] scheduler adding song {}", song.file);
+                    // THIS IS THE KEY FIX: Check album-aware mode!
+                    let album_aware = *app_state.album_aware.read().await;
+                    
+                    if album_aware {
+                        // Album-aware mode: dequeue full album
+                        if let Some(album_songs) = locked_song_queue.remove_album_aware(pooled_conn.mpd_conn()) {
+                            info!("[+] Album-aware: Adding {} songs from album", album_songs.len());
+                            
+                            for song in album_songs {
+                                if let Err(error) = pooled_conn.mpd_conn().mpd.push(song.clone()) {
+                                    eprintln!("[!] Error pushing song to MPD: {}", error);
+                                } else {
+                                    info!("[+] Added: {}", song.file);
+                                }
+                            }
+                            
                             let _ = pooled_conn.mpd_conn().mpd.play();
-
-                            // Request background precompute if queue is getting low
-                            if locked_song_queue.len() < 50 {
-                                let album_aware = *app_state.album_aware.read().await;
-                                locked_song_queue.request_precompute(album_aware);
-                                info!("[+] Queue low, requested background precompute (album_aware: {})", album_aware);
+                        }
+                    } else {
+                        // Regular mode: dequeue single song
+                        if let Some(song) = locked_song_queue.remove() {
+                            if let Err(error) = pooled_conn.mpd_conn().mpd.push(song.clone()) {
+                                eprintln!("[!] Error pushing song to MPD: {}", error);
+                            } else {
+                                info!("[+] scheduler adding song {}", song.file);
+                                let _ = pooled_conn.mpd_conn().mpd.play();
                             }
                         }
+                    }
+
+                    // Request background precompute if queue is getting low
+                    if locked_song_queue.len() < 50 {
+                        locked_song_queue.request_precompute(album_aware);
+                        info!("[+] Queue low, requested background precompute");
                     }
                 }
             }
@@ -88,8 +107,7 @@ async fn scheduler_mainbody(app_state: AppState) {
         if scheduler_cycle % 100 == 0 {
             // Every 5 minutes
             let (hits, misses, hit_rate) = locked_song_queue.cache_stats();
-            let (regular_valid, album_valid) =
-                locked_song_queue.has_valid_cache(&*locked_tags_data);
+            let (regular_valid, album_valid) = locked_song_queue.has_valid_cache(&*locked_tags_data);
             info!(
                 "[+] Cache stats - Hits: {}, Misses: {}, Hit rate: {:.1}%",
                 hits, misses, hit_rate
@@ -156,38 +174,5 @@ async fn background_precompute_task(app_state: AppState) {
 
         drop(locked_song_queue);
         drop(locked_tags_data);
-        // pooled_conn returns to pool automatically
-
-        // TODO: wtf this feels entirely bunk
-        //// More frequent precompute if we're in album-aware mode (it's more expensive)
-        //let album_aware = *app_state.album_aware.read().await;
-        //if album_aware && cycle % 2 == 0 {
-        //    // Extra precompute every minute for album mode
-        //    tokio::time::sleep(Duration::from_secs(30)).await;
-
-        //    // Get another connection from pool for the extra precompute
-        //    let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
-        //        Ok(conn) => conn,
-        //        Err(e) => {
-        //            eprintln!(
-        //                "[!] Error getting MPD connection for extra precompute: {}",
-        //                e
-        //            );
-        //            continue;
-        //        }
-        //    };
-
-        //    let mut locked_song_queue = app_state.song_queue.write().await;
-        //    let locked_tags_data = app_state.tags_data.read().await;
-
-        //    println!("[+] Extra album-aware precompute cycle");
-        //    locked_song_queue
-        //        .background_precompute(&*locked_tags_data, pooled_conn.mpd_conn())
-        //        .await;
-
-        //    drop(locked_song_queue);
-        //    drop(locked_tags_data);
-        //    // pooled_conn returns to pool automatically
-        //}
     }
 }
