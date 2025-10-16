@@ -184,8 +184,8 @@ impl SongQueue {
             None => return Vec::new(),
         };
 
-        let album_name = Self::get_tag_value(&seed_song, "Album")
-            .unwrap_or_else(|| "Unknown Album".to_string());
+        let album_name =
+            Self::get_tag_value(&seed_song, "Album").unwrap_or_else(|| "Unknown Album".to_string());
 
         println!("[+] Album-aware: Loading full album '{}'", album_name);
 
@@ -282,15 +282,15 @@ mod tests {
     #[test]
     fn test_dequeue_modes() {
         let mut queue = SongQueue::new();
-        
+
         // Add test songs
         queue.add(create_test_song("song1.mp3"));
         queue.add(create_test_song("song2.mp3"));
-        
+
         // In regular mode, dequeue returns one song
         queue.set_album_aware(false);
         assert_eq!(queue.len(), 2);
-        
+
         let songs = queue.dequeue_single();
         assert_eq!(songs.len(), 1);
         assert_eq!(queue.len(), 1);
@@ -299,12 +299,12 @@ mod tests {
     #[test]
     fn test_album_aware_flag() {
         let mut queue = SongQueue::new();
-        
+
         queue.set_album_aware(true);
         // Can't easily test dequeue_as_album without real MPD
         // but we can verify the flag is set
         assert!(queue.album_aware);
-        
+
         queue.set_album_aware(false);
         assert!(!queue.album_aware);
     }

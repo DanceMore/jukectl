@@ -19,7 +19,11 @@ pub struct MpdConnectionPool {
 
 impl MpdConnectionPool {
     /// Create a new connection pool and initialize it with connections
-    pub async fn new(host: &str, port: u16, max_connections: usize) -> Result<Self, mpd::error::Error> {
+    pub async fn new(
+        host: &str,
+        port: u16,
+        max_connections: usize,
+    ) -> Result<Self, mpd::error::Error> {
         let pool = Self {
             connections: Arc::new(Mutex::new(VecDeque::new())),
             semaphore: Arc::new(Semaphore::new(max_connections)),
@@ -69,7 +73,7 @@ impl MpdConnectionPool {
     /// Get a connection from the pool
     pub async fn get_connection(&self) -> Result<PooledMpdConnection, mpd::error::Error> {
         debug!("[.] Connection requested from pool");
-        
+
         // Acquire semaphore permit (limits concurrent usage)
         let permit = self.semaphore.clone().acquire_owned().await.unwrap();
 
@@ -77,7 +81,7 @@ impl MpdConnectionPool {
 
         let mpd_conn = if let Some(mut mpd_conn) = connections.pop_front() {
             drop(connections); // Release lock before health check
-            
+
             // Validate connection health
             if self.validate_connection(&mut mpd_conn) {
                 debug!("[+] Reusing healthy connection");
@@ -103,21 +107,24 @@ impl MpdConnectionPool {
     /// Create a new connection, respecting max_connections limit
     async fn create_new_connection(&self) -> Result<MpdConn, mpd::error::Error> {
         let mut conn_count = self.connection_count.lock().await;
-        
+
         if *conn_count >= self.max_connections {
-            warn!("[!] Max connections ({}) reached, waiting for available connection", self.max_connections);
+            warn!(
+                "[!] Max connections ({}) reached, waiting for available connection",
+                self.max_connections
+            );
             drop(conn_count);
             // In practice, the semaphore should prevent this, but just in case
             return Err(mpd::error::Error::Io(std::io::Error::new(
                 std::io::ErrorKind::WouldBlock,
-                "Connection pool exhausted"
+                "Connection pool exhausted",
             )));
         }
 
         let conn = MpdConn::new_with_host(&self.host, self.port)?;
         *conn_count += 1;
         debug!("[+] Created new connection (total: {})", *conn_count);
-        
+
         Ok(conn)
     }
 
@@ -138,7 +145,10 @@ impl MpdConnectionPool {
         if self.validate_connection(&mut conn) {
             let mut connections = self.connections.lock().await;
             connections.push_back(conn);
-            debug!("[+] Connection returned to pool ({} available)", connections.len());
+            debug!(
+                "[+] Connection returned to pool ({} available)",
+                connections.len()
+            );
         } else {
             // Connection is dead, decrement count
             let mut conn_count = self.connection_count.lock().await;
@@ -152,7 +162,7 @@ impl MpdConnectionPool {
         let available = self.connections.lock().await.len();
         let total = *self.connection_count.lock().await;
         let in_use = total - available;
-        
+
         PoolStats {
             available,
             in_use,
@@ -194,7 +204,7 @@ impl Drop for PooledMpdConnection {
         if let Some(mpd_conn) = self.mpd_conn.take() {
             let pool = self.pool.clone();
             let connection_count = self.connection_count.clone();
-            
+
             // Spawn task to return connection
             tokio::spawn(async move {
                 // Recreate the pool struct just for the return_connection method
@@ -220,7 +230,7 @@ mod tests {
 
     // Note: These tests require a running MPD instance
     // Set RUN_INTEGRATION_TESTS=1 to enable
-    
+
     fn should_run_tests() -> bool {
         std::env::var("RUN_INTEGRATION_TESTS").unwrap_or_default() == "1"
     }
@@ -255,7 +265,10 @@ mod tests {
         let initial_available = initial_stats.available;
 
         {
-            let mut conn = pool.get_connection().await.expect("Failed to get connection");
+            let mut conn = pool
+                .get_connection()
+                .await
+                .expect("Failed to get connection");
             conn.mpd_conn().mpd.ping().expect("Ping failed");
 
             let stats_during = pool.stats().await;
@@ -279,7 +292,7 @@ mod tests {
         let pool = Arc::new(
             MpdConnectionPool::new("localhost", 6600, 3)
                 .await
-                .expect("Failed to create pool")
+                .expect("Failed to create pool"),
         );
 
         let mut handles = vec![];
@@ -287,7 +300,10 @@ mod tests {
         for i in 0..5 {
             let pool_clone = pool.clone();
             let handle = tokio::spawn(async move {
-                let mut conn = pool_clone.get_connection().await.expect("Failed to get connection");
+                let mut conn = pool_clone
+                    .get_connection()
+                    .await
+                    .expect("Failed to get connection");
                 conn.mpd_conn().mpd.ping().expect("Ping failed");
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                 i
@@ -315,8 +331,11 @@ mod tests {
             .await
             .expect("Failed to create pool");
 
-        let mut conn = pool.get_connection().await.expect("Failed to get connection");
-        
+        let mut conn = pool
+            .get_connection()
+            .await
+            .expect("Failed to get connection");
+
         // Connection should be valid
         assert!(pool.validate_connection(conn.mpd_conn()));
     }

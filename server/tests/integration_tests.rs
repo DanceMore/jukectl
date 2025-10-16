@@ -283,7 +283,10 @@ mod integration_tests {
         let mut not_query = Query::new();
         not_query.and(Term::Tag("tag".into()), "not-allowed");
 
-        let not_allowed_songs = mpd_conn.mpd.search(&not_query, None).expect("Failed to search");
+        let not_allowed_songs = mpd_conn
+            .mpd
+            .search(&not_query, None)
+            .expect("Failed to search");
         println!(
             "Found {} songs with 'not-allowed' tag",
             not_allowed_songs.len()
@@ -310,9 +313,7 @@ mod integration_tests {
     #[test]
     fn test_unicode_handling() {
         if !should_run_integration_tests() {
-            eprintln!(
-                "⏭️  SKIPPED: test_unicode_handling (set RUN_INTEGRATION_TESTS=1 to enable)"
-            );
+            eprintln!("⏭️  SKIPPED: test_unicode_handling (set RUN_INTEGRATION_TESTS=1 to enable)");
             return;
         }
 

@@ -38,7 +38,7 @@ pub async fn initialize() -> AppState {
     let mpd_pool = Arc::new(
         MpdConnectionPool::new(&mpd_host, mpd_port, max_connections)
             .await
-            .expect("Failed to create MPD connection pool")
+            .expect("Failed to create MPD connection pool"),
     );
 
     let song_queue = Arc::new(RwLock::new(SongQueue::new()));

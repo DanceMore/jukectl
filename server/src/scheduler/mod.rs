@@ -51,12 +51,9 @@ async fn scheduler_mainbody(app_state: AppState) {
                 if now_playing_len < 2 {
                     // Use the unified dequeue method - it handles both modes
                     let songs = locked_song_queue.dequeue(pooled_conn.mpd_conn());
-                    
+
                     if !songs.is_empty() {
-                        info!(
-                            "[+] Scheduler adding {} song(s) to MPD queue",
-                            songs.len()
-                        );
+                        info!("[+] Scheduler adding {} song(s) to MPD queue", songs.len());
 
                         for song in songs {
                             if let Err(error) = pooled_conn.mpd_conn().mpd.push(song.clone()) {
