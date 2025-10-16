@@ -187,24 +187,52 @@ impl SongQueue {
         let album_name =
             Self::get_tag_value(&seed_song, "Album").unwrap_or_else(|| "Unknown Album".to_string());
 
-        println!("[+] Album-aware: Loading full album '{}'", album_name);
+        // Get artist info for tie-breaking (prefer AlbumArtist, fall back to Artist)
+        let seed_artist = Self::get_tag_value(&seed_song, "AlbumArtist")
+            .or_else(|| Self::get_tag_value(&seed_song, "Artist"));
+
+        println!(
+            "[+] Album-aware: Loading full album '{}' by {:?}",
+            album_name, seed_artist
+        );
 
         // Query MPD for all songs from this album
-        let album_songs = {
+        let album_songs: Vec<_> = {
             let mut query = mpd::Query::new();
             query.and(mpd::Term::Tag("album".into()), album_name.as_str());
 
             match mpd_client.mpd.search(&query, None) {
                 Ok(songs) => {
                     // Filter to exact album matches only (MPD does substring matching)
-                    songs.into_iter()
+                    // Also deduplicate by file path
+                    let mut seen = std::collections::HashSet::new();
+                    songs
+                        .into_iter()
                         .filter(|song| {
-                            Self::get_tag_value(song, "Album")
+                            // Must be exact album match
+                            let album_matches = Self::get_tag_value(song, "Album")
                                 .map(|name| name == album_name)
-                                .unwrap_or(false)
+                                .unwrap_or(false);
+
+                            // Must match artist (if we have artist info from seed)
+                            let artist_matches = if let Some(ref artist) = seed_artist {
+                                // Check both AlbumArtist and Artist tags
+                                Self::get_tag_value(song, "AlbumArtist")
+                                    .or_else(|| Self::get_tag_value(song, "Artist"))
+                                    .map(|a| a == *artist)
+                                    .unwrap_or(false)
+                            } else {
+                                // No artist info, so don't filter by artist
+                                true
+                            };
+
+                            // Must not be a duplicate file
+                            let is_unique = seen.insert(song.file.clone());
+
+                            album_matches && artist_matches && is_unique
                         })
                         .collect()
-                },
+                }
                 Err(e) => {
                     eprintln!("[-] Error querying album: {}", e);
                     return vec![seed_song];
