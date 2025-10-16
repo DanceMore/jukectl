@@ -16,7 +16,7 @@ pub struct AppState {
     pub album_aware: Arc<RwLock<bool>>,
 }
 
-pub fn initialize() -> AppState {
+pub async fn initialize() -> AppState {
     // Get MPD configuration from environment
     let mpd_host = env::var("MPD_HOST").unwrap_or_else(|_| "localhost".to_string());
     let mpd_port: u16 = env::var("MPD_PORT")
@@ -34,7 +34,12 @@ pub fn initialize() -> AppState {
         MpdConn::new().expect("Failed to create MPD connection"),
     ));
 
-    let mpd_pool = Arc::new(MpdConnectionPool::new(&mpd_host, mpd_port, max_connections));
+    // Now pool initialization is async and built-in
+    let mpd_pool = Arc::new(
+        MpdConnectionPool::new(&mpd_host, mpd_port, max_connections)
+            .await
+            .expect("Failed to create MPD connection pool")
+    );
 
     let song_queue = Arc::new(RwLock::new(SongQueue::new()));
 

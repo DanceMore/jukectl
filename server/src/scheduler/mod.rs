@@ -49,38 +49,24 @@ async fn scheduler_mainbody(app_state: AppState) {
             Ok(queue) => {
                 let now_playing_len = queue.len();
                 if now_playing_len < 2 {
-                    let album_aware = *app_state.album_aware.read().await;
+                    // Use the unified dequeue method - it handles both modes
+                    let songs = locked_song_queue.dequeue(pooled_conn.mpd_conn());
+                    
+                    if !songs.is_empty() {
+                        info!(
+                            "[+] Scheduler adding {} song(s) to MPD queue",
+                            songs.len()
+                        );
 
-                    if album_aware {
-                        // Album-aware mode: dequeue full album
-                        if let Some(album_songs) =
-                            locked_song_queue.remove_album_aware(pooled_conn.mpd_conn())
-                        {
-                            info!(
-                                "[+] Album-aware: Adding {} songs from album",
-                                album_songs.len()
-                            );
-
-                            for song in album_songs {
-                                if let Err(error) = pooled_conn.mpd_conn().mpd.push(song.clone()) {
-                                    eprintln!("[!] Error pushing song to MPD: {}", error);
-                                } else {
-                                    debug!("[+] Added: {}", song.file);
-                                }
-                            }
-
-                            let _ = pooled_conn.mpd_conn().mpd.play();
-                        }
-                    } else {
-                        // Regular mode: dequeue single song
-                        if let Some(song) = locked_song_queue.remove() {
+                        for song in songs {
                             if let Err(error) = pooled_conn.mpd_conn().mpd.push(song.clone()) {
                                 eprintln!("[!] Error pushing song to MPD: {}", error);
                             } else {
-                                info!("[+] Scheduler adding song {}", song.file);
-                                let _ = pooled_conn.mpd_conn().mpd.play();
+                                debug!("[+] Added: {}", song.file);
                             }
                         }
+
+                        let _ = pooled_conn.mpd_conn().mpd.play();
                     }
                 }
             }

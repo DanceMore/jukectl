@@ -147,20 +147,45 @@ impl SongQueue {
         self.inner.push_back(song);
     }
 
-    // Regular remove - pops one song
+    /// Dequeue songs based on the current mode
+    /// - In regular mode: returns a single song
+    /// - In album-aware mode: returns all songs from the album
+    pub fn dequeue(
+        &mut self,
+        mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
+    ) -> Vec<mpd::Song> {
+        if self.album_aware {
+            self.dequeue_as_album(mpd_client)
+        } else {
+            self.dequeue_single()
+        }
+    }
+
+    /// Dequeue a single song (regular mode)
+    /// Made public for testing purposes
+    pub fn dequeue_single(&mut self) -> Vec<mpd::Song> {
+        self.inner.pop_front().map(|s| vec![s]).unwrap_or_default()
+    }
+
+    /// Remove a single song from the queue (for backward compatibility in tests)
+    /// Returns Option<Song> to match old API
     pub fn remove(&mut self) -> Option<mpd::Song> {
         self.inner.pop_front()
     }
 
-    // Album-aware remove - pops one song, returns full album
-    pub fn remove_album_aware(
+    /// Dequeue a full album (album-aware mode)
+    /// Takes the next song from the queue and returns all songs from its album
+    fn dequeue_as_album(
         &mut self,
         mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
-    ) -> Option<Vec<mpd::Song>> {
-        let seed_song = self.inner.pop_front()?;
+    ) -> Vec<mpd::Song> {
+        let seed_song = match self.inner.pop_front() {
+            Some(song) => song,
+            None => return Vec::new(),
+        };
 
-        let album_name =
-            Self::get_tag_value(&seed_song, "Album").unwrap_or_else(|| "Unknown Album".to_string());
+        let album_name = Self::get_tag_value(&seed_song, "Album")
+            .unwrap_or_else(|| "Unknown Album".to_string());
 
         println!("[+] Album-aware: Loading full album '{}'", album_name);
 
@@ -173,7 +198,7 @@ impl SongQueue {
                 Ok(songs) => songs,
                 Err(e) => {
                     eprintln!("[-] Error querying album: {}", e);
-                    return Some(vec![seed_song]);
+                    return vec![seed_song];
                 }
             }
         };
@@ -192,7 +217,7 @@ impl SongQueue {
 
         println!("[+] Loaded {} tracks from album", sorted_songs.len());
 
-        Some(sorted_songs)
+        sorted_songs
     }
 
     pub fn len(&self) -> usize {
@@ -241,5 +266,46 @@ impl SongQueue {
         self.cache
             .as_ref()
             .map_or(false, |c| c.is_valid(tags_hash, self.cache_ttl))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_song(path: &str) -> mpd::Song {
+        let mut song = mpd::Song::default();
+        song.file = path.to_string();
+        song
+    }
+
+    #[test]
+    fn test_dequeue_modes() {
+        let mut queue = SongQueue::new();
+        
+        // Add test songs
+        queue.add(create_test_song("song1.mp3"));
+        queue.add(create_test_song("song2.mp3"));
+        
+        // In regular mode, dequeue returns one song
+        queue.set_album_aware(false);
+        assert_eq!(queue.len(), 2);
+        
+        let songs = queue.dequeue_single();
+        assert_eq!(songs.len(), 1);
+        assert_eq!(queue.len(), 1);
+    }
+
+    #[test]
+    fn test_album_aware_flag() {
+        let mut queue = SongQueue::new();
+        
+        queue.set_album_aware(true);
+        // Can't easily test dequeue_as_album without real MPD
+        // but we can verify the flag is set
+        assert!(queue.album_aware);
+        
+        queue.set_album_aware(false);
+        assert!(!queue.album_aware);
     }
 }

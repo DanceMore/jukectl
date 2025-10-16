@@ -1,4 +1,4 @@
-use mpd::{error::Result, Client};
+use mpd::{error::Result, Client, Query};
 use std::env;
 use std::net::ToSocketAddrs;
 
@@ -98,5 +98,10 @@ impl MpdConn {
                 Ok(false)
             }
         }
+    }
+
+    // Expose search method for album-aware functionality
+    pub fn search(&mut self, query: &Query, window: Option<(u32, u32)>) -> Result<Vec<mpd::Song>> {
+        self.mpd.search(query, window)
     }
 }

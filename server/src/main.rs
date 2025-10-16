@@ -9,8 +9,9 @@ mod scheduler;
 use scheduler::start_scheduler;
 
 #[launch]
-fn rocket() -> _ {
-    let app_state = app_state::initialize();
+async fn rocket() -> _ {
+    // Initialize is now async
+    let app_state = app_state::initialize().await;
 
     rocket::build()
         .manage(app_state)
@@ -21,7 +22,7 @@ fn rocket() -> _ {
                 Box::pin(async move {
                     let state = rocket.state::<AppState>().unwrap();
                     app_state::initialize_queue(state).await;
-                    start_scheduler(state.clone()).await; // Get it from rocket's state
+                    start_scheduler(state.clone()).await;
                 })
             },
         ))
