@@ -195,7 +195,16 @@ impl SongQueue {
             query.and(mpd::Term::Tag("album".into()), album_name.as_str());
 
             match mpd_client.mpd.search(&query, None) {
-                Ok(songs) => songs,
+                Ok(songs) => {
+                    // Filter to exact album matches only (MPD does substring matching)
+                    songs.into_iter()
+                        .filter(|song| {
+                            Self::get_tag_value(song, "Album")
+                                .map(|name| name == album_name)
+                                .unwrap_or(false)
+                        })
+                        .collect()
+                },
                 Err(e) => {
                     eprintln!("[-] Error querying album: {}", e);
                     return vec![seed_song];
