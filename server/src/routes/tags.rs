@@ -34,7 +34,7 @@ pub struct TagsUpdate {
 async fn update_tags(
     tags_update: Json<TagsUpdate>,
     app_state: &rocket::State<AppState>,
-) -> Json<TagsData> {
+) -> Json<TagsResponse> {
     // Get connection from pool
     let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
         Ok(conn) => conn,
@@ -42,7 +42,12 @@ async fn update_tags(
             eprintln!("[!] Error getting MPD connection from pool: {}", e);
             // Return current tags even if we can't update the queue
             let locked_tags_data = app_state.tags_data.read().await;
-            return Json(locked_tags_data.clone());
+            let album_aware = *app_state.album_aware.read().await;
+            return Json(TagsResponse {
+                any: locked_tags_data.any.clone(),
+                not: locked_tags_data.not.clone(),
+                album_aware,
+            });
         }
     };
 
@@ -59,17 +64,6 @@ async fn update_tags(
         locked_song_queue.invalidate_cache();
     }
 
-    // If 'not' field is not empty, empty the 'TagsData.not' field
-    if !tags_update
-        .not
-        .as_ref()
-        .map(|v| v.is_empty())
-        .unwrap_or(true)
-    {
-        locked_tags_data.not.clear();
-        locked_song_queue.invalidate_cache();
-    }
-
     // Use the async method with pooled connection
     locked_song_queue
         .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
@@ -78,8 +72,14 @@ async fn update_tags(
     // Request background precompute
     locked_song_queue.request_precompute();
 
-    let res = locked_tags_data.clone();
-    Json(res)
+    let album_aware = *app_state.album_aware.read().await;
+
+    // Return response with album_aware included
+    Json(TagsResponse {
+        any: locked_tags_data.any.clone(),
+        not: locked_tags_data.not.clone(),
+        album_aware,
+    })
 }
 
 #[post("/album-mode/<enabled>")]
