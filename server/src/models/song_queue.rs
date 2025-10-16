@@ -1,16 +1,16 @@
 use rand::seq::SliceRandom;
 use std::collections::VecDeque;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use crate::models::hashable_song::HashableSong;
 
-// Enhanced cache entry with metadata
+// Cache entry with timestamp and tag hash
 #[derive(Clone)]
 struct CacheEntry {
     songs: HashSet<HashableSong>,
     timestamp: Instant,
-    tags_hash: u64, // Simple hash of tags to detect changes
+    tags_hash: u64,
 }
 
 impl CacheEntry {
@@ -27,20 +27,16 @@ impl CacheEntry {
     }
 }
 
-// Define your enhanced queue type with caching
 pub struct SongQueue {
     inner: VecDeque<mpd::Song>,
     album_aware: bool,
-
-    // Single cache system (shuffle is the same for both modes!)
+    
+    // Simple cache: stores the result of get_allowed_songs()
+    // This is valuable because querying MPD playlists is slow
     cache: Option<CacheEntry>,
-
-    // Background precompute flag
-    precompute_pending: bool,
-
     cache_ttl: Duration,
-
-    // Performance metrics
+    
+    // Performance tracking
     cache_hits: u64,
     cache_misses: u64,
 }
@@ -51,7 +47,6 @@ impl SongQueue {
             inner: VecDeque::new(),
             album_aware: false,
             cache: None,
-            precompute_pending: false,
             cache_ttl: Duration::from_secs(600), // 10 minute cache
             cache_hits: 0,
             cache_misses: 0,
@@ -65,15 +60,9 @@ impl SongQueue {
         self.album_aware = album_aware;
     }
 
-    // Mark that we need background precomputation
-    pub fn request_precompute(&mut self) {
-        self.precompute_pending = true;
-        println!("[+] Cache precompute requested");
-    }
-
     pub fn invalidate_cache(&mut self) {
         self.cache = None;
-        println!("[+] Cache invalidated");
+        println!("[+] Cache invalidated (tags changed)");
     }
 
     // Simple hash function for tags
@@ -87,112 +76,67 @@ impl SongQueue {
         hasher.finish()
     }
 
-    // Main shuffle method with caching
-    pub async fn shuffle_and_add_with_cache_async(
+    // Main method: get songs (from cache if valid, otherwise query MPD)
+    fn get_or_fetch_songs(
         &mut self,
         tags_data: &crate::models::tags_data::TagsData,
         mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
-    ) {
-        let start_time = Instant::now();
+    ) -> HashSet<HashableSong> {
         let tags_hash = Self::hash_tags(tags_data);
 
-        println!("[+] Cache lookup - hash: {}", tags_hash);
-
-        // Check cache validity
-        let songs = if let Some(ref cache) = self.cache {
+        // Check if we have a valid cache
+        if let Some(ref cache) = self.cache {
             if cache.is_valid(tags_hash, self.cache_ttl) {
                 self.cache_hits += 1;
-                println!(
-                    "[+] CACHE HIT: Using cached songs ({} songs)",
-                    cache.songs.len()
-                );
-                cache.songs.clone()
-            } else {
-                self.cache_misses += 1;
-                println!("[+] CACHE MISS: Cache invalid/stale, rebuilding...");
-                let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-                self.cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-                fresh_songs
+                println!("[+] CACHE HIT: Using {} cached songs", cache.songs.len());
+                return cache.songs.clone();
             }
-        } else {
-            self.cache_misses += 1;
-            println!("[+] CACHE MISS: Building cache...");
-            let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-            self.cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-            fresh_songs
-        };
-
-        println!("[+] Using {} songs for shuffle", songs.len());
-
-        // Shuffle is the same for both modes!
-        self.shuffle_and_add(songs);
-
-        println!("[+] Total shuffle_and_add took: {:?}", start_time.elapsed());
-    }
-
-    // Synchronous fallback method
-    pub fn shuffle_and_add_with_cache(
-        &mut self,
-        tags_data: &crate::models::tags_data::TagsData,
-        mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
-    ) {
-        let start_time = Instant::now();
-        let tags_hash = Self::hash_tags(tags_data);
-
-        let songs = if let Some(ref cache) = self.cache {
-            if cache.is_valid(tags_hash, self.cache_ttl) {
-                self.cache_hits += 1;
-                println!(
-                    "[+] CACHE HIT: Using cached songs ({} songs)",
-                    cache.songs.len()
-                );
-                cache.songs.clone()
-            } else {
-                self.cache_misses += 1;
-                println!("[+] CACHE MISS: Cache invalid, refreshing...");
-                let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-                self.cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-                fresh_songs
-            }
-        } else {
-            self.cache_misses += 1;
-            println!("[+] CACHE MISS: Building cache...");
-            let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-            self.cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-            fresh_songs
-        };
-
-        self.shuffle_and_add(songs);
-
-        println!("[+] Sync shuffle_and_add took: {:?}", start_time.elapsed());
-    }
-
-    // Background precompute method for scheduler
-    pub async fn background_precompute(
-        &mut self,
-        tags_data: &crate::models::tags_data::TagsData,
-        mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
-    ) {
-        let tags_hash = Self::hash_tags(tags_data);
-
-        // Check if precompute is needed
-        if self.precompute_pending
-            || self
-                .cache
-                .as_ref()
-                .map_or(true, |c| !c.is_valid(tags_hash, self.cache_ttl))
-        {
-            println!("[+] Background: Precomputing cache...");
-            let start = Instant::now();
-            let fresh_songs = tags_data.get_allowed_songs(mpd_client);
-            self.cache = Some(CacheEntry::new(fresh_songs.clone(), tags_hash));
-            self.precompute_pending = false;
-            println!(
-                "[+] Background: Cache precomputed in {:?} ({} songs)",
-                start.elapsed(),
-                fresh_songs.len()
-            );
         }
+
+        // Cache miss - query MPD
+        self.cache_misses += 1;
+        println!("[+] CACHE MISS: Querying MPD for songs...");
+        
+        let start = Instant::now();
+        let songs = tags_data.get_allowed_songs(mpd_client);
+        let query_time = start.elapsed();
+        
+        println!("[+] MPD query took {:?}, found {} songs", query_time, songs.len());
+        
+        // Update cache
+        self.cache = Some(CacheEntry::new(songs.clone(), tags_hash));
+        
+        songs
+    }
+
+    // Main shuffle method - now simpler!
+    pub fn shuffle_and_add(
+        &mut self,
+        tags_data: &crate::models::tags_data::TagsData,
+        mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
+    ) {
+        let start_time = Instant::now();
+        
+        // Get songs (cached or fresh)
+        let songs = self.get_or_fetch_songs(tags_data, mpd_client);
+        
+        // Shuffle and load into queue
+        self.inner.clear();
+        self.inner.reserve(songs.len());
+        
+        let mut song_vec: Vec<mpd::Song> = songs.into_iter().map(mpd::Song::from).collect();
+        let mut rng = rand::rng();
+        song_vec.shuffle(&mut rng);
+        
+        for song in song_vec {
+            self.inner.push_back(song);
+        }
+        
+        println!(
+            "[+] Shuffle complete: {} songs loaded in {:?}",
+            self.inner.len(),
+            start_time.elapsed()
+        );
     }
 
     pub fn add(&mut self, song: mpd::Song) {
@@ -209,19 +153,14 @@ impl SongQueue {
         &mut self,
         mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
     ) -> Option<Vec<mpd::Song>> {
-        // Pop the seed song
         let seed_song = self.inner.pop_front()?;
 
-        // Get the album name from the seed song
         let album_name =
             Self::get_tag_value(&seed_song, "Album").unwrap_or_else(|| "Unknown Album".to_string());
 
-        println!(
-            "[+] Album-aware dequeue: Loading full album '{}'",
-            album_name
-        );
+        println!("[+] Album-aware: Loading full album '{}'", album_name);
 
-        // Query MPD for all songs from this album using proper Query API
+        // Query MPD for all songs from this album
         let album_songs = {
             let mut query = mpd::Query::new();
             query.and(mpd::Term::Tag("album".into()), album_name.as_str());
@@ -229,8 +168,7 @@ impl SongQueue {
             match mpd_client.mpd.search(&query, None) {
                 Ok(songs) => songs,
                 Err(e) => {
-                    eprintln!("[-] Error querying album songs: {}", e);
-                    // Fallback: return just the seed song
+                    eprintln!("[-] Error querying album: {}", e);
                     return Some(vec![seed_song]);
                 }
             }
@@ -276,24 +214,6 @@ impl SongQueue {
         self.inner.clear();
     }
 
-    // Simplified shuffle - same for both modes!
-    pub fn shuffle_and_add(&mut self, songs: HashSet<HashableSong>) {
-        let start_time = std::time::Instant::now();
-        self.inner.reserve(songs.len());
-        self.empty_queue();
-
-        let mut song_vec: Vec<mpd::Song> = songs.into_iter().map(mpd::Song::from).collect();
-        let mut rng = rand::rng();
-        song_vec.shuffle(&mut rng);
-
-        for song in song_vec {
-            self.add(song);
-        }
-
-        let elapsed_time = start_time.elapsed();
-        println!("[+] Shuffle and add took: {:?}", elapsed_time);
-    }
-
     fn get_tag_value(song: &mpd::Song, tag_name: &str) -> Option<String> {
         song.tags
             .iter()
@@ -301,7 +221,7 @@ impl SongQueue {
             .map(|(_, value)| value.clone())
     }
 
-    // Performance monitoring methods
+    // Performance monitoring
     pub fn cache_stats(&self) -> (u64, u64, f64) {
         let total = self.cache_hits + self.cache_misses;
         let hit_rate = if total > 0 {
@@ -312,7 +232,6 @@ impl SongQueue {
         (self.cache_hits, self.cache_misses, hit_rate)
     }
 
-    // Simplified - single cache, single boolean
     pub fn has_valid_cache(&self, tags_data: &crate::models::tags_data::TagsData) -> bool {
         let tags_hash = Self::hash_tags(tags_data);
         self.cache

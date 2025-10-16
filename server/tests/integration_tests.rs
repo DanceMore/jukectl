@@ -1,12 +1,9 @@
 // tests/integration_tests.rs
-use jukectl_server::models::hashable_song::HashableSong;
 use jukectl_server::models::song_queue::SongQueue;
 use jukectl_server::models::tags_data::TagsData;
 use jukectl_server::mpd_conn::mpd_conn::MpdConn;
 use mpd::{Client, Query, Term};
-use std::collections::HashSet;
 use std::env;
-use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
@@ -194,7 +191,6 @@ mod integration_tests {
             return;
         }
 
-        // Check if MPD is available (assumes it's already running)
         check_mpd_available().expect("MPD container should be running before tests");
 
         // Test basic connection
@@ -221,7 +217,7 @@ mod integration_tests {
 
         // Test album search functionality
         let mut query = Query::new();
-        query.and(Term::Tag("album".into()), "Classic Rock Hits"); // Assuming this exists in test data
+        query.and(Term::Tag("album".into()), "Classic Rock Hits");
 
         let search_results = mpd_conn
             .mpd
@@ -268,7 +264,7 @@ mod integration_tests {
 
         // Search for a song to add to playlist
         let mut query = Query::new();
-        query.and(Term::Tag("artist".into()), "The Test Rockers"); // Assuming this exists
+        query.and(Term::Tag("artist".into()), "The Test Rockers");
 
         let songs = mpd_conn
             .mpd
@@ -303,9 +299,9 @@ mod integration_tests {
     }
 
     #[test]
-    fn test_real_album_aware_functionality() {
+    fn test_real_shuffle_with_tags() {
         if !should_run_integration_tests() {
-            eprintln!("⏭️  SKIPPED: test_real_album_aware_functionality (set RUN_INTEGRATION_TESTS=1 to enable)");
+            eprintln!("⏭️  SKIPPED: test_real_shuffle_with_tags (set RUN_INTEGRATION_TESTS=1 to enable)");
             return;
         }
 
@@ -313,68 +309,26 @@ mod integration_tests {
 
         let mut mpd_conn = MpdConn::new().expect("Failed to connect to test MPD");
 
-        // Set up test data - create playlists with album representatives
-        let rock_playlist = "test_rock";
-        let jazz_playlist = "test_jazz";
-
-        // Clean up any existing playlists
-        let _ = mpd_conn.mpd.pl_remove(rock_playlist);
-        let _ = mpd_conn.mpd.pl_remove(jazz_playlist);
-
-        // Find some rock songs (assuming your test data has these)
-        let mut rock_query = Query::new();
-        rock_query.and(Term::Tag("genre".into()), "Rock");
-        let rock_songs = mpd_conn
-            .mpd
-            .search(&rock_query, Some((0, 5)))
-            .expect("Failed to find rock songs");
-
-        // Find some jazz songs
-        let mut jazz_query = Query::new();
-        jazz_query.and(Term::Tag("genre".into()), "Jazz");
-        let jazz_songs = mpd_conn
-            .mpd
-            .search(&jazz_query, Some((0, 5)))
-            .expect("Failed to find jazz songs");
-
-        // Add representative songs to playlists
-        if !rock_songs.is_empty() {
-            mpd_conn
-                .mpd
-                .pl_push(rock_playlist, rock_songs[0].clone())
-                .expect("Failed to add rock song to playlist");
-        }
-
-        if !jazz_songs.is_empty() {
-            mpd_conn
-                .mpd
-                .pl_push(jazz_playlist, jazz_songs[0].clone())
-                .expect("Failed to add jazz song to playlist");
-        }
-
-        // Test TagsData with album-aware functionality
+        // Create tags data
         let tags_data = TagsData {
-            any: vec![],
-            not: vec![],
+            any: vec!["jukebox".to_string()],
+            not: vec!["explicit".to_string()],
         };
 
-        let album_songs = tags_data.get_album_aware_songs(&mut mpd_conn);
-
-        // Should get full albums, not just representative songs
-        println!("Found {} songs using album-aware mode", album_songs.len());
+        // Get allowed songs using the new API
+        let allowed_songs = tags_data.get_allowed_songs(&mut mpd_conn);
+        println!("Found {} allowed songs", allowed_songs.len());
 
         // Test with SongQueue
         let mut queue = SongQueue::new();
-        queue.set_album_aware(true);
-        queue.shuffle_and_add(album_songs);
+        queue.set_album_aware(false);
+        
+        // Use the new shuffle_and_add API
+        queue.shuffle_and_add(&tags_data, &mut mpd_conn);
 
         assert!(queue.len() > 0, "Queue should contain songs");
 
-        // Clean up
-        let _ = mpd_conn.mpd.pl_remove(rock_playlist);
-        let _ = mpd_conn.mpd.pl_remove(jazz_playlist);
-
-        println!("✓ Real album-aware functionality test passed");
+        println!("✓ Real shuffle with tags test passed");
     }
 
     #[test]
@@ -402,7 +356,7 @@ mod integration_tests {
         // Test search performance
         let search_start = std::time::Instant::now();
         let mut query = Query::new();
-        query.and(Term::Any, "the"); // Common word
+        query.and(Term::Any, "the");
 
         let search_results = mpd_conn
             .mpd

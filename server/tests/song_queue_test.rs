@@ -1,4 +1,3 @@
-use jukectl_server::models::hashable_song::HashableSong;
 use jukectl_server::models::song_queue::SongQueue;
 
 #[cfg(test)]
@@ -79,38 +78,61 @@ mod tests {
     }
 
     #[test]
-    fn test_shuffle_and_add() {
-        use std::collections::HashSet;
-
+    fn test_cache_invalidation() {
         let mut queue = SongQueue::new();
-        let mut song_set = HashSet::new();
+        
+        // Test that cache can be invalidated without crashing
+        queue.invalidate_cache();
+        
+        // Add some songs manually (not through shuffle)
+        for i in 1..=5 {
+            let song = create_test_song(&format!("test/song{}.mp3", i));
+            queue.add(song);
+        }
+        
+        assert_eq!(queue.len(), 5);
+        
+        println!("✓ Cache invalidation test passed");
+    }
 
-        // Create 10 songs as HashableSong objects
+    #[test]
+    fn test_cache_stats() {
+        let queue = SongQueue::new();
+        
+        // Get initial cache stats
+        let (hits, misses, hit_rate) = queue.cache_stats();
+        
+        // Initially should be 0/0
+        assert_eq!(hits, 0);
+        assert_eq!(misses, 0);
+        assert_eq!(hit_rate, 0.0);
+        
+        println!("✓ Cache stats test passed");
+    }
+
+    #[test]
+    fn test_manual_song_operations() {
+        // Test that we can still manually add/remove songs
+        // even though shuffle_and_add now needs MpdConn
+        let mut queue = SongQueue::new();
+
+        // Add songs manually
         for i in 1..=10 {
             let song = create_test_song(&format!("test/song{}.mp3", i));
-            song_set.insert(HashableSong(song));
+            queue.add(song);
         }
 
-        // Original set size should be 10
-        assert_eq!(song_set.len(), 10);
-
-        // After shuffling and adding, queue should have 10 items
-        queue.shuffle_and_add(song_set);
         assert_eq!(queue.len(), 10);
 
-        // Verify all songs are in the queue (just check count for now since order is randomized)
+        // Verify all songs are in the queue
         let all_songs = queue.head(Some(queue.len()));
         assert_eq!(all_songs.len(), 10);
 
-        // Create a set of song files to verify all original songs are present
-        let mut result_files = HashSet::new();
-        for song in all_songs {
-            result_files.insert(song.file);
+        // Verify we can access them
+        for i in 0..10 {
+            assert_eq!(all_songs[i].file, format!("test/song{}.mp3", i + 1));
         }
 
-        assert_eq!(result_files.len(), 10);
-        for i in 1..=10 {
-            assert!(result_files.contains(&format!("test/song{}.mp3", i)));
-        }
+        println!("✓ Manual song operations test passed");
     }
 }

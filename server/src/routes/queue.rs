@@ -1,7 +1,6 @@
 use crate::app_state::AppState;
 use rocket::serde::json::Json;
 
-// TODO: refactor this out
 fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
     song_array.into_iter().map(|song| song.file).collect()
 }
@@ -13,18 +12,16 @@ struct QueueResponse {
     tail: Vec<String>,
 }
 
-// Option<> on count makes the Query Param optional :)
 #[get("/queue?<count>")]
 async fn get_queue(
     app_state: &rocket::State<AppState>,
     count: Option<usize>,
 ) -> Json<QueueResponse> {
-    let count_value = count.unwrap_or(3); // Use a default value of 3 if count is None
+    let count_value = count.unwrap_or(3);
 
     let locked_song_queue = app_state.song_queue.read().await;
-    let length = locked_song_queue.len(); // Get the length of the queue
+    let length = locked_song_queue.len();
 
-    // TODO: I kinda hate this presentation layer formatting, but it compiles...
     let head = locked_song_queue
         .head(Some(count_value))
         .iter()
@@ -66,10 +63,8 @@ async fn shuffle_songs(app_state: &rocket::State<AppState>) -> Json<ShuffleRespo
     // Capture the old songs before shuffling
     let old_songs = locked_song_queue.head(None);
 
-    // Use the new async caching method with pooled connection
-    locked_song_queue
-        .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
-        .await;
+    // Shuffle with simplified method
+    locked_song_queue.shuffle_and_add(&*locked_tags_data, pooled_conn.mpd_conn());
 
     // Capture the new songs after shuffling
     let new_songs = locked_song_queue.head(None);

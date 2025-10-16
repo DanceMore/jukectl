@@ -54,7 +54,7 @@ async fn update_tags(
     let mut locked_song_queue = app_state.song_queue.write().await;
     let mut locked_tags_data = app_state.tags_data.write().await;
 
-    // Check if 'any' and 'not' fields are present and update them if needed
+    // Update tags if provided
     if let Some(any) = &tags_update.any {
         locked_tags_data.any = any.clone();
         locked_song_queue.invalidate_cache();
@@ -64,17 +64,11 @@ async fn update_tags(
         locked_song_queue.invalidate_cache();
     }
 
-    // Use the async method with pooled connection
-    locked_song_queue
-        .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
-        .await;
-
-    // Request background precompute
-    locked_song_queue.request_precompute();
+    // Rebuild queue with new tags
+    locked_song_queue.shuffle_and_add(&*locked_tags_data, pooled_conn.mpd_conn());
 
     let album_aware = *app_state.album_aware.read().await;
 
-    // Return response with album_aware included
     Json(TagsResponse {
         any: locked_tags_data.any.clone(),
         not: locked_tags_data.not.clone(),
@@ -106,22 +100,15 @@ async fn set_album_mode(
     *locked_album_aware = enabled;
     locked_song_queue.set_album_aware(enabled);
 
-    println!("[+] album-aware mode set to: {}", enabled);
+    println!("[+] Album-aware mode set to: {}", enabled);
 
-    // Use async method for instant response
-    locked_song_queue
-        .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
-        .await;
+    // Rebuild queue (dequeue behavior changes, but queue content stays same)
+    locked_song_queue.shuffle_and_add(&*locked_tags_data, pooled_conn.mpd_conn());
 
-    // Request background precompute
-    locked_song_queue.request_precompute();
-
-    let response = serde_json::json!({
+    Json(serde_json::json!({
         "album_aware": enabled,
         "message": if enabled { "Album-aware mode enabled" } else { "Album-aware mode disabled" }
-    });
-
-    Json(response)
+    }))
 }
 
 #[post("/album-mode/toggle")]
@@ -146,25 +133,16 @@ async fn toggle_album_mode(app_state: &rocket::State<AppState>) -> Json<serde_js
     *locked_album_aware = !*locked_album_aware;
     locked_song_queue.set_album_aware(*locked_album_aware);
 
-    println!("[+] album-aware mode toggled to: {}", *locked_album_aware);
+    println!("[+] Album-aware mode toggled to: {}", *locked_album_aware);
 
-    // Use async method
-    locked_song_queue
-        .shuffle_and_add_with_cache_async(&*locked_tags_data, pooled_conn.mpd_conn())
-        .await;
+    locked_song_queue.shuffle_and_add(&*locked_tags_data, pooled_conn.mpd_conn());
 
-    // Request background precompute
-    locked_song_queue.request_precompute();
-
-    let response = serde_json::json!({
+    Json(serde_json::json!({
         "album_aware": *locked_album_aware,
         "message": if *locked_album_aware { "Album-aware mode enabled" } else { "Album-aware mode disabled" }
-    });
-
-    Json(response)
+    }))
 }
 
-// Updated cache statistics endpoint
 #[get("/cache-stats")]
 async fn cache_stats(app_state: &rocket::State<AppState>) -> Json<serde_json::Value> {
     let locked_song_queue = app_state.song_queue.read().await;
@@ -205,17 +183,16 @@ async fn refresh_cache(app_state: &rocket::State<AppState>) -> Json<serde_json::
     println!("[+] Manual cache refresh requested");
     let start_time = std::time::Instant::now();
 
-    // Invalidate and rebuild cache
+    // Invalidate and rebuild
     locked_song_queue.invalidate_cache();
-    locked_song_queue
-        .background_precompute(&*locked_tags_data, pooled_conn.mpd_conn())
-        .await;
+    locked_song_queue.shuffle_and_add(&*locked_tags_data, pooled_conn.mpd_conn());
 
     let elapsed = start_time.elapsed();
 
     Json(serde_json::json!({
         "status": "success",
         "refresh_time_ms": elapsed.as_millis(),
+        "queue_length": locked_song_queue.len(),
         "message": "Cache refreshed successfully"
     }))
 }

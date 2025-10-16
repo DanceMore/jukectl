@@ -13,7 +13,7 @@ pub struct AppState {
     pub mpd_pool: Arc<MpdConnectionPool>,
     pub song_queue: Arc<RwLock<SongQueue>>,
     pub tags_data: Arc<RwLock<TagsData>>,
-    pub album_aware: Arc<RwLock<bool>>, // Album-aware mode flag
+    pub album_aware: Arc<RwLock<bool>>,
 }
 
 pub fn initialize() -> AppState {
@@ -24,15 +24,12 @@ pub fn initialize() -> AppState {
         .parse()
         .expect("Failed to parse MPD_PORT as u16");
 
-    // Initialize the connection pool with the same host/port
+    // Initialize the connection pool
     let max_connections = env::var("MPD_MAX_CONNECTIONS")
         .unwrap_or_else(|_| "5".to_string())
         .parse()
         .unwrap_or(5);
 
-    // Initialize tokio synchronization primitives
-    // TODO: this gets MPD_HOST and MPD_PORD deeper in runtime which is a bug and sucks
-    // but also everything is moving to pool anyways...
     let mpd_conn = Arc::new(RwLock::new(
         MpdConn::new().expect("Failed to create MPD connection"),
     ));
@@ -41,7 +38,7 @@ pub fn initialize() -> AppState {
 
     let song_queue = Arc::new(RwLock::new(SongQueue::new()));
 
-    // Shareable TagsData with default values including album-aware settings
+    // Default tags
     let default_tags_data = TagsData {
         any: vec!["jukebox".to_string()],
         not: vec!["explicit".to_string()],
@@ -69,7 +66,6 @@ pub async fn initialize_queue(state: &AppState) {
 
     locked_song_queue.set_album_aware(*locked_album_aware);
 
-    // Use the new caching method for initial queue setup
-    // This will build the cache for the first time
-    locked_song_queue.shuffle_and_add_with_cache(&*locked_tags_data, &mut *locked_mpd_conn);
+    // Initial queue fill - uses cache internally
+    locked_song_queue.shuffle_and_add(&*locked_tags_data, &mut *locked_mpd_conn);
 }
