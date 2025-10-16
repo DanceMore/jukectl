@@ -95,7 +95,11 @@ async fn scheduler_mainbody(app_state: AppState) {
             let cache_valid = locked_song_queue.has_valid_cache(&*locked_tags_data);
             info!(
                 "[+] Cache stats - Hits: {}, Misses: {}, Hit rate: {:.1}%, Valid: {}, Queue: {}",
-                hits, misses, hit_rate, cache_valid, locked_song_queue.len()
+                hits,
+                misses,
+                hit_rate,
+                cache_valid,
+                locked_song_queue.len()
             );
         }
 

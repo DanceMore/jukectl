@@ -44,7 +44,7 @@ mod tests {
         // Note: We can't test the full shuffle with MockMpd because
         // shuffle_and_add() now needs a real MpdConn that implements
         // the full MPD protocol. MockMpd is too limited.
-        
+
         // Instead, just verify the queue can be created with album-aware mode
         let mut queue = SongQueue::new();
         queue.set_album_aware(true);

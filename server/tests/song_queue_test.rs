@@ -80,33 +80,33 @@ mod tests {
     #[test]
     fn test_cache_invalidation() {
         let mut queue = SongQueue::new();
-        
+
         // Test that cache can be invalidated without crashing
         queue.invalidate_cache();
-        
+
         // Add some songs manually (not through shuffle)
         for i in 1..=5 {
             let song = create_test_song(&format!("test/song{}.mp3", i));
             queue.add(song);
         }
-        
+
         assert_eq!(queue.len(), 5);
-        
+
         println!("✓ Cache invalidation test passed");
     }
 
     #[test]
     fn test_cache_stats() {
         let queue = SongQueue::new();
-        
+
         // Get initial cache stats
         let (hits, misses, hit_rate) = queue.cache_stats();
-        
+
         // Initially should be 0/0
         assert_eq!(hits, 0);
         assert_eq!(misses, 0);
         assert_eq!(hit_rate, 0.0);
-        
+
         println!("✓ Cache stats test passed");
     }
 

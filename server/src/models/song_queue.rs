@@ -1,6 +1,6 @@
 use rand::seq::SliceRandom;
-use std::collections::VecDeque;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use crate::models::hashable_song::HashableSong;
@@ -30,12 +30,12 @@ impl CacheEntry {
 pub struct SongQueue {
     inner: VecDeque<mpd::Song>,
     album_aware: bool,
-    
+
     // Simple cache: stores the result of get_allowed_songs()
     // This is valuable because querying MPD playlists is slow
     cache: Option<CacheEntry>,
     cache_ttl: Duration,
-    
+
     // Performance tracking
     cache_hits: u64,
     cache_misses: u64,
@@ -96,16 +96,20 @@ impl SongQueue {
         // Cache miss - query MPD
         self.cache_misses += 1;
         println!("[+] CACHE MISS: Querying MPD for songs...");
-        
+
         let start = Instant::now();
         let songs = tags_data.get_allowed_songs(mpd_client);
         let query_time = start.elapsed();
-        
-        println!("[+] MPD query took {:?}, found {} songs", query_time, songs.len());
-        
+
+        println!(
+            "[+] MPD query took {:?}, found {} songs",
+            query_time,
+            songs.len()
+        );
+
         // Update cache
         self.cache = Some(CacheEntry::new(songs.clone(), tags_hash));
-        
+
         songs
     }
 
@@ -116,22 +120,22 @@ impl SongQueue {
         mpd_client: &mut crate::mpd_conn::mpd_conn::MpdConn,
     ) {
         let start_time = Instant::now();
-        
+
         // Get songs (cached or fresh)
         let songs = self.get_or_fetch_songs(tags_data, mpd_client);
-        
+
         // Shuffle and load into queue
         self.inner.clear();
         self.inner.reserve(songs.len());
-        
+
         let mut song_vec: Vec<mpd::Song> = songs.into_iter().map(mpd::Song::from).collect();
         let mut rng = rand::rng();
         song_vec.shuffle(&mut rng);
-        
+
         for song in song_vec {
             self.inner.push_back(song);
         }
-        
+
         println!(
             "[+] Shuffle complete: {} songs loaded in {:?}",
             self.inner.len(),

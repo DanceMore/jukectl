@@ -301,7 +301,9 @@ mod integration_tests {
     #[test]
     fn test_real_shuffle_with_tags() {
         if !should_run_integration_tests() {
-            eprintln!("⏭️  SKIPPED: test_real_shuffle_with_tags (set RUN_INTEGRATION_TESTS=1 to enable)");
+            eprintln!(
+                "⏭️  SKIPPED: test_real_shuffle_with_tags (set RUN_INTEGRATION_TESTS=1 to enable)"
+            );
             return;
         }
 
@@ -322,7 +324,7 @@ mod integration_tests {
         // Test with SongQueue
         let mut queue = SongQueue::new();
         queue.set_album_aware(false);
-        
+
         // Use the new shuffle_and_add API
         queue.shuffle_and_add(&tags_data, &mut mpd_conn);
 
