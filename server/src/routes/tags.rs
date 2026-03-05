@@ -197,6 +197,21 @@ async fn refresh_cache(app_state: &rocket::State<AppState>) -> Json<serde_json::
     }))
 }
 
+#[get("/tags/available")]
+async fn list_available_tags(app_state: &rocket::State<AppState>) -> Json<Vec<String>> {
+    // Get connection from pool
+    let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("[!] Error getting MPD connection from pool: {}", e);
+            return Json(Vec::new());
+        }
+    };
+
+    let tags = TagsData::list_available_tags(pooled_conn.mpd_conn());
+    Json(tags)
+}
+
 // Return routes defined in this module
 pub fn routes() -> Vec<rocket::Route> {
     routes![
@@ -205,6 +220,7 @@ pub fn routes() -> Vec<rocket::Route> {
         set_album_mode,
         toggle_album_mode,
         cache_stats,
-        refresh_cache
+        refresh_cache,
+        list_available_tags
     ]
 }

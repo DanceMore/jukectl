@@ -1,4 +1,5 @@
 use crate::app_state::AppState;
+use jukectl_server::mpd_conn::traits::MpdClient;
 use rocket::serde::json::Json;
 
 #[derive(serde::Deserialize)]
@@ -25,7 +26,7 @@ async fn update_song_tags(
     };
 
     // Get the first song from the now playing queue
-    let first_song = match pooled_conn.mpd_conn().mpd.queue() {
+    let first_song: Option<mpd::Song> = match pooled_conn.mpd_conn().mpd.queue() {
         Ok(queue) => queue.first().cloned(),
         Err(e) => {
             eprintln!("[!] Failed to get MPD queue: {}", e);
@@ -49,7 +50,7 @@ async fn update_song_tags(
 
             let fetch_timer = std::time::Instant::now();
             // Find the song's position(s) in the playlist with the specified tag
-            let playlist = match pooled_conn.mpd_conn().mpd.playlist(tag) {
+            let playlist: Vec<mpd::Song> = match pooled_conn.mpd_conn().mpd.playlist(tag) {
                 Ok(playlist) => playlist,
                 Err(err) => {
                     eprintln!("[!] Error getting playlist: {}", err);

@@ -3,6 +3,7 @@ use rocket::tokio::time::Duration;
 use std::io::Write;
 
 use crate::app_state::AppState;
+use jukectl_server::mpd_conn::traits::MpdClient;
 
 use log::{debug, error, info, trace, warn};
 
@@ -43,7 +44,7 @@ async fn scheduler_mainbody(app_state: AppState) {
         }
 
         // Main MPD queue management
-        let mpd_queue_result = pooled_conn.mpd_conn().mpd.queue();
+        let mpd_queue_result: Result<Vec<mpd::Song>, mpd::error::Error> = pooled_conn.mpd_conn().mpd.queue();
 
         match mpd_queue_result {
             Ok(queue) => {

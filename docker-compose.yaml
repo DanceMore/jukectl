@@ -1,0 +1,52 @@
+version: '2.2'
+
+services:
+  mpd:
+    image: randomcoww/mpd:0.21.19
+    ports:
+      - "6600:6600"
+    volumes:
+      - ./mpd.conf:/etc/mpd.conf
+      - "/tank/sorted-music:/mpd/music:ro"
+      - "/srv/docker/mpd/cache:/mpd/cache"
+      - "/srv/docker/mpd/playlists:/mpd/playlists"
+    devices:
+      - /dev/snd
+    links:
+      - icecast:icecast
+
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 128m
+    memswap_limit: 256m
+    mem_reservation: 128m
+
+  icecast:
+    image: moul/icecast
+    environment:
+      - ICECAST_SOURCE_PASSWORD=password
+      - ICECAST_ADMIN_PASSWORD=password
+      - ICECAST_PASSWORD=password
+      - ICECAST_RELAY_PASSWORD=password
+    ports:
+      - 8000:8000
+
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 128m
+    memswap_limit: 256m
+    mem_reservation: 128m
+
+  jukectl:
+    image: ghrc/jukectl
+    ports:
+      - "4567:4567"
+    environment:
+      MPD_HOST: "mpd"
+      MPD_PORT: "6600"
+
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 1024m
+    memswap_limit: 2048m
+    mem_reservation: 1024m

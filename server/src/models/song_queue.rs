@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use crate::models::hashable_song::HashableSong;
+use crate::mpd_conn::traits::MpdClient;
 
 // Cache entry with timestamp and tag hash
 #[derive(Clone)]
@@ -197,7 +198,7 @@ impl SongQueue {
         );
 
         // Query MPD for all songs from this album
-        let album_songs: Vec<_> = {
+        let album_songs: Vec<mpd::Song> = {
             let mut query = mpd::Query::new();
             query.and(mpd::Term::Tag("album".into()), album_name.as_str());
 

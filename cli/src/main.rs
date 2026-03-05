@@ -41,6 +41,8 @@ enum Commands {
     Untag(UntagArgs),
     /// Skip the currently playing song
     Skip,
+    /// List all available jukebox tags
+    Tags,
     /// Adjust the jukebox NowPlaying tags
     Playback(PlaybackArgs),
     /// Query the jukebox queue directly
@@ -140,6 +142,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Handle skip subcommand
             match skip_item(&api_hostname).await {
                 Ok(_) => debug!("Skipped item"),
+                Err(err) => eprintln!("[!] Error: {}", err),
+            }
+        }
+        Commands::Tags => {
+            // Handle tags subcommand
+            match list_available_tags(&api_hostname).await {
+                Ok(_) => debug!("Listed available tags"),
                 Err(err) => eprintln!("[!] Error: {}", err),
             }
         }
@@ -341,6 +350,39 @@ async fn status(api_hostname: &str) -> Result<(), reqwest::Error> {
         eprintln!(
             "Error: Failed to fetch root (HTTP {})",
             response_root.status()
+        );
+    }
+
+    Ok(())
+}
+
+async fn list_available_tags(api_hostname: &str) -> Result<(), reqwest::Error> {
+    print_banner();
+    println!("{}", "available jukebox tags:".cyan().bold());
+
+    let client = reqwest::Client::new();
+    let url = format!("{}/tags/available", api_hostname);
+
+    let response = client.get(&url).send().await?;
+
+    if response.status().is_success() {
+        let tags: Vec<String> = response.json().await?;
+        if tags.is_empty() {
+            println!("  {}", "no tags found.".red());
+        } else {
+            // Sort tags for better readability
+            let mut sorted_tags = tags;
+            sorted_tags.sort();
+
+            for (index, tag) in sorted_tags.iter().enumerate() {
+                let color = if index % 2 == 0 { "green" } else { "yellow" };
+                println!("  {}", tag.color(color).bold());
+            }
+        }
+    } else {
+        eprintln!(
+            "Error: Failed to fetch available tags (HTTP {})",
+            response.status()
         );
     }
 

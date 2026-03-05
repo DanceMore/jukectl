@@ -4,6 +4,7 @@ use rocket::Route;
 use rocket::State;
 
 use crate::app_state::AppState;
+use jukectl_server::mpd_conn::traits::MpdClient;
 
 // Helper function moved from main.rs
 fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {
@@ -24,7 +25,7 @@ pub async fn index(app_state: &State<AppState>) -> Json<Vec<String>> {
     };
 
     // Attempt to retrieve the song queue
-    let song_array = match pooled_conn.mpd_conn().mpd.queue() {
+    let song_array: Vec<mpd::Song> = match pooled_conn.mpd_conn().mpd.queue() {
         Ok(queue) => queue,
         Err(error) => {
             eprintln!("[!] Error retrieving song queue: {}", error);
@@ -57,7 +58,7 @@ pub async fn skip(app_state: &State<AppState>) -> Json<SkipResponse> {
     };
 
     // Get the first song from the now playing queue
-    let now_playing_queue = match pooled_conn.mpd_conn().mpd.queue() {
+    let now_playing_queue: Vec<mpd::Song> = match pooled_conn.mpd_conn().mpd.queue() {
         Ok(queue) => queue,
         Err(e) => {
             eprintln!("[!] Failed to get MPD queue: {}", e);

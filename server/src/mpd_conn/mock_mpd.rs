@@ -1,10 +1,11 @@
-use mpd::{error::Error, error::ErrorCode, error::Result, error::ServerError, Song};
+use crate::mpd_conn::traits::MpdClient;
+use mpd::{error::Error, error::ErrorCode, error::Result, error::ServerError, Playlist, Query, Song};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct MockMpd {
-    playlists: Arc<Mutex<HashMap<String, Vec<Song>>>>, // we could use mpd::Playlist...? later...?
+    playlists: Arc<Mutex<HashMap<String, Vec<Song>>>>,
     queue: Arc<Mutex<Vec<Song>>>,
     is_consuming: Arc<Mutex<bool>>,
     connection_state: Arc<Mutex<bool>>, // true if connected
@@ -37,11 +38,27 @@ impl MockMpd {
         let mut state = self.connection_state.lock().unwrap();
         *state = true;
     }
+
+    fn check_connection(&self) -> Result<()> {
+        let state = self.connection_state.lock().unwrap();
+        if !*state {
+            return Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Not connected",
+            )));
+        }
+        Ok(())
+    }
 }
 
-// Implement common MPD client methods for MockMpd
-impl MockMpd {
-    pub fn playlist(&self, name: &str) -> Result<Vec<Song>> {
+// Implement MpdClient trait for MockMpd
+impl MpdClient for MockMpd {
+    fn ping(&mut self) -> Result<()> {
+        self.check_connection()
+    }
+
+    fn playlist(&mut self, name: &str) -> Result<Vec<Song>> {
+        self.check_connection()?;
         let playlists = self.playlists.lock().unwrap();
         match playlists.get(name) {
             Some(songs) => Ok(songs.clone()),
@@ -54,42 +71,52 @@ impl MockMpd {
         }
     }
 
-    pub fn queue(&self) -> Result<Vec<Song>> {
-        let state = self.connection_state.lock().unwrap();
-        if !*state {
-            return Err(Error::Io(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected",
-            )));
-        }
+    fn playlists(&mut self) -> Result<Vec<Playlist>> {
+        self.check_connection()?;
+        let playlists = self.playlists.lock().unwrap();
+        Ok(playlists
+            .keys()
+            .map(|name| Playlist {
+                name: name.clone(),
+                last_mod: "".to_string(),
+            })
+            .collect())
+    }
 
+    fn queue(&mut self) -> Result<Vec<Song>> {
+        self.check_connection()?;
         let queue = self.queue.lock().unwrap();
         Ok(queue.clone())
     }
 
-    pub fn push(&self, song: Song) -> Result<()> {
-        let state = self.connection_state.lock().unwrap();
-        if !*state {
-            return Err(Error::Io(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected",
-            )));
+    fn search(&mut self, _query: &Query, _window: Option<(u32, u32)>) -> Result<Vec<Song>> {
+        self.check_connection()?;
+        // Simple mock search returns all songs from all playlists for now
+        // A more advanced mock could actually interpret the query
+        let playlists = self.playlists.lock().unwrap();
+        let mut all_songs = Vec::new();
+        for playlist in playlists.values() {
+            all_songs.extend(playlist.clone());
         }
+        Ok(all_songs)
+    }
 
-        let mut queue = self.queue.lock().unwrap();
-        queue.push(song);
+    fn consume(&mut self, state: bool) -> Result<()> {
+        self.check_connection()?;
+        let mut consume_state = self.is_consuming.lock().unwrap();
+        *consume_state = state;
         Ok(())
     }
 
-    pub fn delete(&self, pos: u32) -> Result<()> {
-        let state = self.connection_state.lock().unwrap();
-        if !*state {
-            return Err(Error::Io(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected",
-            )));
-        }
+    fn push(&mut self, song: Song) -> Result<mpd::Id> {
+        self.check_connection()?;
+        let mut queue = self.queue.lock().unwrap();
+        queue.push(song);
+        Ok(mpd::Id(queue.len() as u32))
+    }
 
+    fn delete(&mut self, pos: u32) -> Result<()> {
+        self.check_connection()?;
         let mut queue = self.queue.lock().unwrap();
         if pos as usize >= queue.len() {
             return Err(Error::Server(ServerError {
@@ -103,85 +130,23 @@ impl MockMpd {
         Ok(())
     }
 
-    pub fn consume(&self, state: bool) -> Result<()> {
-        let connection_state = self.connection_state.lock().unwrap();
-        if !*connection_state {
-            return Err(Error::Io(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected",
-            )));
-        }
-
-        let mut consume_state = self.is_consuming.lock().unwrap();
-        *consume_state = state;
-        Ok(())
+    fn play(&mut self) -> Result<()> {
+        self.check_connection()
     }
 
-    pub fn play(&self) -> Result<()> {
-        let state = self.connection_state.lock().unwrap();
-        if !*state {
-            return Err(Error::Io(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected",
-            )));
-        }
-
-        Ok(())
-    }
-
-    pub fn ping(&self) -> Result<()> {
-        let state = self.connection_state.lock().unwrap();
-        if !*state {
-            return Err(Error::Io(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected",
-            )));
-        }
-
-        Ok(())
-    }
-
-    pub fn pl_push(&self, playlist_name: &str, song: Song) -> Result<()> {
-        let state = self.connection_state.lock().unwrap();
-        if !*state {
-            return Err(Error::Io(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected",
-            )));
-        }
-
+    fn pl_push(&mut self, playlist_name: &str, song: Song) -> Result<()> {
+        self.check_connection()?;
         let mut playlists = self.playlists.lock().unwrap();
-
-        // Create playlist if it doesn't exist
-        if !playlists.contains_key(playlist_name) {
-            playlists.insert(playlist_name.to_string(), Vec::new());
-        }
-
-        // Add song to playlist
-        if let Some(playlist) = playlists.get_mut(playlist_name) {
-            playlist.push(song);
-            Ok(())
-        } else {
-            Err(Error::Server(ServerError {
-                code: ErrorCode::NoExist,
-                pos: 0,
-                command: "pl_push".to_string(),
-                detail: "Failed to add song to plalist".to_string(),
-            }))
-        }
+        playlists
+            .entry(playlist_name.to_string())
+            .or_insert_with(Vec::new)
+            .push(song);
+        Ok(())
     }
 
-    pub fn pl_delete(&self, playlist_name: &str, pos: u32) -> Result<()> {
-        let state = self.connection_state.lock().unwrap();
-        if !*state {
-            return Err(Error::Io(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected",
-            )));
-        }
-
+    fn pl_delete(&mut self, playlist_name: &str, pos: u32) -> Result<()> {
+        self.check_connection()?;
         let mut playlists = self.playlists.lock().unwrap();
-
         if let Some(playlist) = playlists.get_mut(playlist_name) {
             if pos as usize >= playlist.len() {
                 return Err(Error::Server(ServerError {
@@ -194,13 +159,29 @@ impl MockMpd {
             playlist.remove(pos as usize);
             Ok(())
         } else {
-            let error_msg = format!("Playlist {} not found", playlist_name);
             Err(Error::Server(ServerError {
                 code: ErrorCode::NoExist,
                 pos: 0,
                 command: "pl_delete".to_string(),
-                detail: error_msg,
+                detail: format!("Playlist {} not found", playlist_name),
             }))
         }
+    }
+
+    fn pl_remove(&mut self, playlist: &str) -> Result<()> {
+        self.check_connection()?;
+        let mut playlists = self.playlists.lock().unwrap();
+        playlists.remove(playlist);
+        Ok(())
+    }
+
+    fn listall(&mut self) -> Result<Vec<Song>> {
+        self.check_connection()?;
+        let playlists = self.playlists.lock().unwrap();
+        let mut all_songs = Vec::new();
+        for playlist in playlists.values() {
+            all_songs.extend(playlist.clone());
+        }
+        Ok(all_songs)
     }
 }
