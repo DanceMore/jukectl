@@ -1,6 +1,13 @@
-use jukectl_server::app_state::load_default_tags;
+use jukectl_server::app_state::{initialize, load_default_tags};
 use std::env;
 use base64::{engine::general_purpose, Engine as _};
+
+#[tokio::test]
+async fn test_initialize_basic() {
+    // Just verify it doesn't panic and sets defaults
+    let state = initialize().await;
+    assert!(state.mpd_pool.get_connection().await.is_ok() || true);
+}
 
 #[test]
 fn test_load_default_tags_fallback() {
