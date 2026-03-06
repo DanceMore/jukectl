@@ -83,22 +83,31 @@ impl MpdClient for MockMpd {
             .collect())
     }
 
+    fn search(&mut self, _query: &Query, _window: Option<(u32, u32)>) -> Result<Vec<Song>> {
+        self.check_connection()?;
+
+        // Safety-first approach to mocking search without unsafe transmute.
+        // For the purposes of jukectl's album-aware shuffle, the MockMpd::search
+        // simply returns ALL songs from all its internal playlists.
+        //
+        // The SongQueue::dequeue_as_album method performs its own exact filtering
+        // on the results returned by this search method. Therefore, returning all
+        // songs is functionally correct for the current test suite, as the
+        // necessary filtering (by album name, artist, etc.) happens at the caller level.
+
+        let playlists = self.playlists.lock().unwrap();
+        let mut results: Vec<Song> = Vec::new();
+        for playlist in playlists.values() {
+            results.extend(playlist.clone());
+        }
+
+        Ok(results)
+    }
+
     fn queue(&mut self) -> Result<Vec<Song>> {
         self.check_connection()?;
         let queue = self.queue.lock().unwrap();
         Ok(queue.clone())
-    }
-
-    fn search(&mut self, _query: &Query, _window: Option<(u32, u32)>) -> Result<Vec<Song>> {
-        self.check_connection()?;
-        // Simple mock search returns all songs from all playlists for now
-        // A more advanced mock could actually interpret the query
-        let playlists = self.playlists.lock().unwrap();
-        let mut all_songs = Vec::new();
-        for playlist in playlists.values() {
-            all_songs.extend(playlist.clone());
-        }
-        Ok(all_songs)
     }
 
     fn consume(&mut self, state: bool) -> Result<()> {
