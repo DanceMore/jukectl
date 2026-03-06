@@ -39,6 +39,14 @@ impl MockMpd {
         *state = true;
     }
 
+    // Clear all internal state
+    pub fn clear_state(&self) {
+        self.playlists.lock().unwrap().clear();
+        self.queue.lock().unwrap().clear();
+        *self.is_consuming.lock().unwrap() = false;
+        *self.connection_state.lock().unwrap() = true;
+    }
+
     fn check_connection(&self) -> Result<()> {
         let state = self.connection_state.lock().unwrap();
         if !*state {

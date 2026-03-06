@@ -1,9 +1,10 @@
+use rocket::{get, post, routes};
 use rocket::serde::json::Json;
 use serde::Deserialize;
 use serde::Serialize;
 
 use crate::app_state::AppState;
-use jukectl_server::models::tags_data::{TagInfo, TagsData};
+use crate::models::tags_data::{TagInfo, TagsData};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagsResponse {

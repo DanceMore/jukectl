@@ -2,10 +2,10 @@ use rocket::tokio::sync::RwLock;
 use std::env;
 use std::sync::Arc;
 
-use jukectl_server::models::song_queue::SongQueue;
-use jukectl_server::models::tags_data::TagsData;
-use jukectl_server::mpd_conn::mpd_conn::MpdConn;
-use jukectl_server::mpd_conn::mpd_pool::MpdConnectionPool;
+use crate::models::song_queue::SongQueue;
+use crate::models::tags_data::TagsData;
+use crate::mpd_conn::mpd_conn::MpdConn;
+use crate::mpd_conn::mpd_pool::MpdConnectionPool;
 
 #[derive(Clone)]
 pub struct AppState {

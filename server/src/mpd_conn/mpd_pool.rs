@@ -227,6 +227,7 @@ impl Drop for PooledMpdConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mpd_conn::traits::MpdClient;
 
     // Note: These tests require a running MPD instance
     // Set RUN_INTEGRATION_TESTS=1 to enable

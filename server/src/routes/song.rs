@@ -1,5 +1,7 @@
 use crate::app_state::AppState;
-use jukectl_server::mpd_conn::traits::MpdClient;
+use crate::mpd_conn::traits::MpdClient;
+use rocket::post;
+use rocket::routes;
 use rocket::serde::json::Json;
 
 #[derive(serde::Deserialize)]

@@ -1,10 +1,11 @@
 // index.rs - Updated to use connection pool
+use rocket::{get, post, routes};
 use rocket::serde::json::Json;
 use rocket::Route;
 use rocket::State;
 
 use crate::app_state::AppState;
-use jukectl_server::mpd_conn::traits::MpdClient;
+use crate::mpd_conn::traits::MpdClient;
 
 // Helper function moved from main.rs
 fn queue_to_filenames(song_array: Vec<mpd::Song>) -> Vec<String> {

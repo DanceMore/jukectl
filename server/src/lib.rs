@@ -3,3 +3,7 @@ pub mod mpd_conn;
 
 // models/ directory
 pub mod models;
+
+pub mod app_state;
+pub mod routes;
+pub mod scheduler;
