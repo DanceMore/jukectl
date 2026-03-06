@@ -1,11 +1,12 @@
 use std::env;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::models::song_queue::SongQueue;
 use crate::models::tags_data::TagsData;
 use crate::mpd_conn::mpd_conn::MpdConn;
 use crate::mpd_conn::mpd_pool::MpdPool;
+use crate::mpd_conn::traits::MpdClient;
 
 pub struct Config {
     pub album_aware_shuffle: bool,
@@ -16,7 +17,7 @@ pub struct AppState {
     pub mpd_pool: Arc<MpdPool>,
     pub queue: Arc<Mutex<SongQueue>>,
     pub config: Arc<Mutex<Config>>,
-    pub default_tags: TagsData,
+    pub tags_data: Arc<RwLock<TagsData>>,
 }
 
 pub async fn initialize() -> AppState {
@@ -43,16 +44,38 @@ pub async fn initialize() -> AppState {
         album_aware_shuffle: env::var("ALBUM_AWARE_SHUFFLE").unwrap_or_default() == "1",
     }));
 
+    let default_tags = load_default_tags();
+    let tags_data = Arc::new(RwLock::new(default_tags));
+
     AppState {
         mpd_pool,
         queue,
         config,
-        default_tags: load_default_tags(),
+        tags_data,
     }
 }
 
-pub async fn initialize_queue(_state: &AppState) {
-    log::info!("Queue initialization complete.");
+pub async fn initialize_queue(state: &AppState) {
+    log::info!("[+] Initializing song queue...");
+    
+    let mut pooled_conn = match state.mpd_pool.get_connection().await {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("[!] Failed to get connection for initialization: {}", e);
+            return;
+        }
+    };
+
+    let mut locked_song_queue = state.queue.lock().await;
+    let locked_tags_data = state.tags_data.read().await;
+    let locked_config = state.config.lock().await;
+
+    locked_song_queue.set_album_aware(locked_config.album_aware_shuffle);
+
+    // Initial queue fill
+    locked_song_queue.shuffle_and_add(&*locked_tags_data, &mut pooled_conn.mpd_conn().mpd);
+    
+    log::info!("[+] Queue initialization complete. ({} songs)", locked_song_queue.len());
 }
 
 pub fn load_default_tags() -> TagsData {

@@ -1050,11 +1050,7 @@ dependencies = [
 
 [[package]]
 name = "jukectl"
-<<<<<<< HEAD
-version = "0.2.30"
-=======
-version = "0.2.28"
->>>>>>> a16d89e (feat: transition to first-party C bindings via libmpdclient)
+version = "0.2.31"
 dependencies = [
  "clap",
  "colored",
@@ -1079,11 +1075,8 @@ dependencies = [
 name = "jukectl-server"
 version = "0.2.0"
 dependencies = [
-<<<<<<< HEAD
- "base64",
-=======
  "anyhow",
->>>>>>> a16d89e (feat: transition to first-party C bindings via libmpdclient)
+ "base64",
  "env_logger",
  "jukectl-mpdclient-sys",
  "log",
@@ -1123,7 +1116,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
 dependencies = [
  "cfg-if",
- "windows-link 0.2.1",
+ "windows-link",
 ]
 
 [[package]]
@@ -1497,19 +1490,6 @@ dependencies = [
 [[package]]
 name = "prettyplease"
 version = "0.2.37"
-<<<<<<< HEAD
-=======
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
-dependencies = [
- "proc-macro2",
- "syn",
-]
-
-[[package]]
-name = "proc-macro2"
-version = "1.0.101"
->>>>>>> a16d89e (feat: transition to first-party C bindings via libmpdclient)
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [

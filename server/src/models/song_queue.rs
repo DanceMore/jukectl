@@ -163,8 +163,34 @@ impl SongQueue {
         (0, 0, 0.0) // Dummy for tests
     }
 
-    pub fn shuffle_and_add(&mut self, _tags: &crate::models::tags_data::TagsResponse, _mpd: &mut dyn MpdClient) {
-        // Logic to shuffle all songs and add to queue
+    pub fn shuffle_and_add(&mut self, tags: &crate::models::tags_data::TagsData, mpd: &mut dyn MpdClient) {
+        let mut all_songs = mpd.listall().unwrap_or_default();
+        
+        // Filter by tags
+        let filtered_songs: Vec<Song> = all_songs.into_iter().filter(|s| {
+            // Must match ANY of the "any" tags
+            let matches_any = if tags.any.is_empty() {
+                true
+            } else {
+                tags.any.iter().any(|t| {
+                    s.file.contains(t) || 
+                    s.artist.as_ref().map_or(false, |a| a.contains(t)) ||
+                    s.album.as_ref().map_or(false, |a| a.contains(t))
+                })
+            };
+
+            // Must NOT match ANY of the "not" tags
+            let matches_not = tags.not.iter().any(|t| {
+                s.file.contains(t) || 
+                s.artist.as_ref().map_or(false, |a| a.contains(t)) ||
+                s.album.as_ref().map_or(false, |a| a.contains(t))
+            });
+
+            matches_any && !matches_not
+        }).collect();
+
+        debug!("Found {} songs matching tags", filtered_songs.len());
+        self.add_songs(filtered_songs);
     }
 }
 
