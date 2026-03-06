@@ -2,6 +2,7 @@ use rand::seq::SliceRandom;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
+use log::warn;
 
 use crate::models::hashable_song::HashableSong;
 use crate::mpd_conn::traits::MpdClient;
@@ -207,7 +208,7 @@ impl SongQueue {
                     // Filter to exact album matches only (MPD does substring matching)
                     // Also deduplicate by file path
                     let mut seen = std::collections::HashSet::new();
-                    songs
+                    let filtered: Vec<mpd::Song> = songs
                         .into_iter()
                         .filter(|song| {
                             // Must be exact album match
@@ -232,7 +233,14 @@ impl SongQueue {
 
                             album_matches && artist_matches && is_unique
                         })
-                        .collect()
+                        .collect();
+
+                    if filtered.is_empty() {
+                        warn!("[-] Album-aware: No songs found for album '{}', returning seed song", album_name);
+                        vec![seed_song]
+                    } else {
+                        filtered
+                    }
                 }
                 Err(e) => {
                     eprintln!("[-] Error querying album: {}", e);

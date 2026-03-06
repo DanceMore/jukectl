@@ -176,6 +176,17 @@ impl MpdConn {
         })
     }
 
+    /// Create a new MpdConn for testing with a specific MockMpd
+    pub fn new_for_testing(mock: MockMpd) -> Self {
+        MpdConn {
+            mpd: MpdBackend::Mock(mock),
+            address: Vec::new(),
+            host: "mock".to_string(),
+            port: 0,
+            is_dev_mode: true,
+        }
+    }
+
     // Method to expose connection info for parallel tasks
     pub fn get_host_info(&self) -> (String, u16) {
         (self.host.clone(), self.port)

@@ -1,4 +1,5 @@
 use jukectl_server::mpd_conn::mock_mpd::MockMpd;
+use jukectl_server::mpd_conn::traits::MpdClient;
 use mpd::Song;
 
 // Tests for the mock MPD implementation
@@ -14,7 +15,7 @@ mod tests {
 
     #[test]
     fn test_playlist_operations() {
-        let mock = MockMpd::new();
+        let mut mock = MockMpd::new();
 
         // Add a playlist
         let songs = vec![
@@ -49,7 +50,7 @@ mod tests {
 
     #[test]
     fn test_queue_operations() {
-        let mock = MockMpd::new();
+        let mut mock = MockMpd::new();
 
         // Initially queue should be empty
         let empty_queue = mock.queue().unwrap();
@@ -89,7 +90,7 @@ mod tests {
 
     #[test]
     fn test_connection_simulation() {
-        let mock = MockMpd::new();
+        let mut mock = MockMpd::new();
 
         // Initially connected
         assert!(mock.ping().is_ok());
