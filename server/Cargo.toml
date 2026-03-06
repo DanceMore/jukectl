@@ -12,19 +12,14 @@ serde_json = "1"
 base64 = "0.22.1"
 rocket = { version = "0.5.0", features = ["json"] }
 
-mpd = "*"
+# Our custom sys crate
+jukectl-mpdclient-sys = { path = "jukectl-mpdclient-sys" }
+anyhow = "1"
 tokio = "1.48.0"
 log = "0.4.29"
 
-# we use cargo-geiger in the CICD workflows, but we don't
-# **actually** need it listed in dev-deps.... listing it here
-# seems to create more Scanner results than it solves ;)
-#[dev-dependencies]
-#cargo-geiger = "0.11.6"
-
 [dev-dependencies]
-mockall = "0.14.0"                                  # For creating mock objects
-tokio-test = "0.4.2"                                # For testing async code
-reqwest = { version = "0.12", features = ["json"] } # For API testing
-#rand = "0.8.5"                                      # For generating random data in tests
-test-log = "0.2.19"                                 # For capturing logs during tests
+mockall = "0.14.0"
+tokio-test = "0.4.2"
+reqwest = { version = "0.12", features = ["json"] }
+test-log = "0.2.19"

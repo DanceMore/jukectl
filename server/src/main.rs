@@ -1,29 +1,21 @@
 #[macro_use]
 extern crate rocket;
 
-// local imports
 use jukectl_server::app_state;
-use jukectl_server::app_state::AppState;
-mod routes;
-mod scheduler;
-use scheduler::start_scheduler;
+use jukectl_server::routes;
+use jukectl_server::scheduler;
 
 #[launch]
 async fn rocket() -> _ {
-    // Initialize is now async
-    let app_state = app_state::initialize().await;
+    let state = app_state::initialize().await;
+    let state_for_scheduler = state.clone();
 
     rocket::build()
-        .manage(app_state)
+        .manage(state)
         .mount("/", routes::all_routes())
-        .attach(rocket::fairing::AdHoc::on_liftoff(
-            "Initialize Queue and Scheduler",
-            |rocket| {
-                Box::pin(async move {
-                    let state = rocket.state::<AppState>().unwrap();
-                    app_state::initialize_queue(state).await;
-                    start_scheduler(state.clone()).await;
-                })
-            },
-        ))
+        .attach(rocket::fairing::AdHoc::on_liftoff("Scheduler", |_| {
+            Box::pin(async move {
+                scheduler::start_scheduler(state_for_scheduler).await;
+            })
+        }))
 }

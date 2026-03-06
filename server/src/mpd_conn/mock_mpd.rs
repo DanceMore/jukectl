@@ -1,5 +1,5 @@
-use crate::mpd_conn::traits::MpdClient;
-use mpd::{error::Error, error::ErrorCode, error::Result, error::ServerError, Playlist, Query, Song};
+use crate::mpd_conn::traits::{FilterTerm, MpdClient, Playlist, Query, Song};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -21,19 +21,16 @@ impl MockMpd {
         }
     }
 
-    // Add a new playlist or replace an existing one
     pub fn add_playlist(&self, name: &str, songs: Vec<Song>) {
         let mut playlists = self.playlists.lock().unwrap();
         playlists.insert(name.to_string(), songs);
     }
 
-    // Simulate disconnection
     pub fn simulate_disconnect(&self) {
         let mut state = self.connection_state.lock().unwrap();
         *state = false;
     }
 
-    // Simulate reconnection
     pub fn simulate_reconnect(&self) {
         let mut state = self.connection_state.lock().unwrap();
         *state = true;
@@ -42,16 +39,12 @@ impl MockMpd {
     fn check_connection(&self) -> Result<()> {
         let state = self.connection_state.lock().unwrap();
         if !*state {
-            return Err(Error::Io(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected",
-            )));
+            return Err(anyhow!("Not connected"));
         }
         Ok(())
     }
 }
 
-// Implement MpdClient trait for MockMpd
 impl MpdClient for MockMpd {
     fn ping(&mut self) -> Result<()> {
         self.check_connection()
@@ -62,12 +55,7 @@ impl MpdClient for MockMpd {
         let playlists = self.playlists.lock().unwrap();
         match playlists.get(name) {
             Some(songs) => Ok(songs.clone()),
-            None => Err(Error::Server(ServerError {
-                code: ErrorCode::NoExist,
-                pos: 0,
-                command: "playlist".to_string(),
-                detail: "Playlist not found".to_string(),
-            })),
+            None => Err(anyhow!("Playlist not found")),
         }
     }
 
@@ -76,10 +64,7 @@ impl MpdClient for MockMpd {
         let playlists = self.playlists.lock().unwrap();
         Ok(playlists
             .keys()
-            .map(|name| Playlist {
-                name: name.clone(),
-                last_mod: "".to_string(),
-            })
+            .map(|name| Playlist { name: name.clone() })
             .collect())
     }
 
@@ -89,16 +74,36 @@ impl MpdClient for MockMpd {
         Ok(queue.clone())
     }
 
-    fn search(&mut self, _query: &Query, _window: Option<(u32, u32)>) -> Result<Vec<Song>> {
+    fn search(&mut self, query: &Query, _window: Option<(u32, u32)>) -> Result<Vec<Song>> {
         self.check_connection()?;
-        // Simple mock search returns all songs from all playlists for now
-        // A more advanced mock could actually interpret the query
+
         let playlists = self.playlists.lock().unwrap();
         let mut all_songs = Vec::new();
         for playlist in playlists.values() {
             all_songs.extend(playlist.clone());
         }
-        Ok(all_songs)
+
+        let filtered_songs = all_songs
+            .into_iter()
+            .filter(|song| {
+                query.terms.iter().all(|term| match term {
+                    FilterTerm::Any(val) => {
+                        song.file.contains(val)
+                            || song.title.as_ref().map_or(false, |t| t.contains(val))
+                            || song.artist.as_ref().map_or(false, |a| a.contains(val))
+                            || song.album.as_ref().map_or(false, |a| a.contains(val))
+                    }
+                    FilterTerm::Tag(tag, val) => match tag.to_lowercase().as_str() {
+                        "artist" => song.artist.as_ref().map_or(false, |a| a == val),
+                        "album" => song.album.as_ref().map_or(false, |a| a == val),
+                        "title" => song.title.as_ref().map_or(false, |t| t == val),
+                        _ => false,
+                    },
+                })
+            })
+            .collect();
+
+        Ok(filtered_songs)
     }
 
     fn consume(&mut self, state: bool) -> Result<()> {
@@ -108,23 +113,27 @@ impl MpdClient for MockMpd {
         Ok(())
     }
 
-    fn push(&mut self, song: Song) -> Result<mpd::Id> {
+    fn push(&mut self, file: &str) -> Result<u32> {
         self.check_connection()?;
         let mut queue = self.queue.lock().unwrap();
-        queue.push(song);
-        Ok(mpd::Id(queue.len() as u32))
+        let id = queue.len() as u32;
+        queue.push(Song {
+            file: file.to_string(),
+            title: None,
+            artist: None,
+            album: None,
+            duration: None,
+            pos: Some(id),
+            id: Some(id),
+        });
+        Ok(id)
     }
 
     fn delete(&mut self, pos: u32) -> Result<()> {
         self.check_connection()?;
         let mut queue = self.queue.lock().unwrap();
         if pos as usize >= queue.len() {
-            return Err(Error::Server(ServerError {
-                code: ErrorCode::NoExist,
-                pos: 0,
-                command: "delete".to_string(),
-                detail: "Position out of bounds".to_string(),
-            }));
+            return Err(anyhow!("Position out of bounds"));
         }
         queue.remove(pos as usize);
         Ok(())
@@ -134,13 +143,21 @@ impl MpdClient for MockMpd {
         self.check_connection()
     }
 
-    fn pl_push(&mut self, playlist_name: &str, song: Song) -> Result<()> {
+    fn pl_push(&mut self, playlist_name: &str, file: &str) -> Result<()> {
         self.check_connection()?;
         let mut playlists = self.playlists.lock().unwrap();
         playlists
             .entry(playlist_name.to_string())
             .or_insert_with(Vec::new)
-            .push(song);
+            .push(Song {
+                file: file.to_string(),
+                title: None,
+                artist: None,
+                album: None,
+                duration: None,
+                pos: None,
+                id: None,
+            });
         Ok(())
     }
 
@@ -149,22 +166,12 @@ impl MpdClient for MockMpd {
         let mut playlists = self.playlists.lock().unwrap();
         if let Some(playlist) = playlists.get_mut(playlist_name) {
             if pos as usize >= playlist.len() {
-                return Err(Error::Server(ServerError {
-                    code: ErrorCode::NoExist,
-                    pos: 0,
-                    command: "delete".to_string(),
-                    detail: "Position out of bounds".to_string(),
-                }));
+                return Err(anyhow!("Position out of bounds"));
             }
             playlist.remove(pos as usize);
             Ok(())
         } else {
-            Err(Error::Server(ServerError {
-                code: ErrorCode::NoExist,
-                pos: 0,
-                command: "pl_delete".to_string(),
-                detail: format!("Playlist {} not found", playlist_name),
-            }))
+            Err(anyhow!("Playlist {} not found", playlist_name))
         }
     }
 

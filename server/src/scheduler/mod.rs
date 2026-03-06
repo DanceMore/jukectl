@@ -1,18 +1,20 @@
-use rocket::tokio;
-use rocket::tokio::time::Duration;
+use tokio::time::Duration;
 use std::io::Write;
+use std::sync::Arc;
 
 use crate::app_state::AppState;
-use jukectl_server::mpd_conn::traits::MpdClient;
+use crate::mpd_conn::traits::{MpdClient, Song};
+use crate::models::song_queue::DequeueMode;
 
-use log::{debug, info, trace};
+use log::{debug, info, trace, error};
 
 pub async fn start_scheduler(app_state: AppState) {
     info!("[+] Starting scheduler...");
-    tokio::spawn(scheduler_mainbody(app_state));
+    let app_state_arc = Arc::new(app_state);
+    tokio::spawn(scheduler_mainbody(app_state_arc));
 }
 
-async fn scheduler_mainbody(app_state: AppState) {
+async fn scheduler_mainbody(app_state: Arc<AppState>) {
     let mut scheduler_cycle = 0u64;
 
     loop {
@@ -28,67 +30,48 @@ async fn scheduler_mainbody(app_state: AppState) {
         let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
             Ok(conn) => conn,
             Err(e) => {
-                eprintln!("[!] Error getting MPD connection from pool: {}", e);
+                error!("[!] Error getting MPD connection from pool: {}", e);
                 tokio::time::sleep(Duration::from_secs(3)).await;
                 continue;
             }
         };
 
-        let mut locked_song_queue = app_state.song_queue.write().await;
-        let locked_tags_data = app_state.tags_data.read().await;
-
-        // Check if SongQueue is empty and refill if needed
-        if locked_song_queue.len() == 0 {
-            info!("[!] Scheduler: Queue empty, refilling...");
-            locked_song_queue.shuffle_and_add(&*locked_tags_data, pooled_conn.mpd_conn());
-        }
-
-        // Main MPD queue management
-        let mpd_queue_result: Result<Vec<mpd::Song>, mpd::error::Error> = pooled_conn.mpd_conn().mpd.queue();
+        let mpd_queue_result: anyhow::Result<Vec<Song>> = pooled_conn.mpd_conn().mpd.queue();
 
         match mpd_queue_result {
             Ok(queue) => {
-                let now_playing_len = queue.len();
-                if now_playing_len < 2 {
-                    // Use the unified dequeue method - it handles both modes
-                    let songs = locked_song_queue.dequeue(pooled_conn.mpd_conn());
+                if queue.len() < 2 {
+                    let mut locked_song_queue = app_state.queue.lock().await;
+                    
+                    if !locked_song_queue.is_empty() {
+                        let mode = if app_state.config.lock().await.album_aware_shuffle {
+                            DequeueMode::Album
+                        } else {
+                            DequeueMode::Single
+                        };
+                        
+                        let songs = locked_song_queue.dequeue(mode, &mut pooled_conn);
 
-                    if !songs.is_empty() {
-                        info!("[+] Scheduler adding {} song(s) to MPD queue", songs.len());
+                        if !songs.is_empty() {
+                            info!("[+] Scheduler adding {} song(s) to MPD queue", songs.len());
 
-                        for song in songs {
-                            if let Err(error) = pooled_conn.mpd_conn().mpd.push(song.clone()) {
-                                eprintln!("[!] Error pushing song to MPD: {}", error);
-                            } else {
-                                debug!("[+] Added: {}", song.file);
+                            for song in songs {
+                                if let Err(err) = pooled_conn.mpd_conn().mpd.push(&song.file) {
+                                    error!("[!] Error pushing song to MPD: {}", err);
+                                } else {
+                                    debug!("[+] Added: {}", song.file);
+                                }
                             }
-                        }
 
-                        let _ = pooled_conn.mpd_conn().mpd.play();
+                            let _ = pooled_conn.mpd_conn().mpd.play();
+                        }
                     }
                 }
             }
-            Err(error) => {
-                eprintln!("[!] Error getting MPD queue: {}", error);
+            Err(err) => {
+                error!("[!] Error getting MPD queue: {}", err);
             }
         }
-
-        // Print cache stats periodically
-        if scheduler_cycle % 100 == 0 {
-            let (hits, misses, hit_rate) = locked_song_queue.cache_stats();
-            let cache_valid = locked_song_queue.has_valid_cache(&*locked_tags_data);
-            info!(
-                "[+] Cache stats - Hits: {}, Misses: {}, Hit rate: {:.1}%, Valid: {}, Queue: {}",
-                hits,
-                misses,
-                hit_rate,
-                cache_valid,
-                locked_song_queue.len()
-            );
-        }
-
-        drop(locked_song_queue);
-        drop(locked_tags_data);
 
         tokio::time::sleep(Duration::from_secs(3)).await;
     }

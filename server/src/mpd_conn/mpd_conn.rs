@@ -1,13 +1,13 @@
-use mpd::{error::Result, Client, Query};
+use anyhow::{Context, Result};
 use std::env;
-use std::net::ToSocketAddrs;
 
 use crate::mpd_conn::mock_mpd::MockMpd;
-use crate::mpd_conn::traits::MpdClient;
-use log::{debug, info, warn};
+use crate::mpd_conn::traits::{MpdClient, Playlist, Query, Song};
+use crate::mpd_conn::raw_client::RawMpdClient;
+use log::{debug, info};
 
 pub enum MpdBackend {
-    Real(Client),
+    Real(RawMpdClient),
     Mock(MockMpd),
 }
 
@@ -19,51 +19,54 @@ impl MpdClient for MpdBackend {
         }
     }
 
-    fn playlist(&mut self, name: &str) -> Result<Vec<mpd::Song>> {
+    fn playlist(&mut self, name: &str) -> Result<Vec<Song>> {
         match self {
-            MpdBackend::Real(c) => c.playlist(name),
+            MpdBackend::Real(c) => c.get_playlist_songs(name),
             MpdBackend::Mock(m) => m.playlist(name),
         }
     }
 
-    fn playlists(&mut self) -> Result<Vec<mpd::Playlist>> {
+    fn playlists(&mut self) -> Result<Vec<Playlist>> {
         match self {
-            MpdBackend::Real(c) => c.playlists(),
+            MpdBackend::Real(c) => c.list_playlists(),
             MpdBackend::Mock(m) => m.playlists(),
         }
     }
 
-    fn queue(&mut self) -> Result<Vec<mpd::Song>> {
+    fn queue(&mut self) -> Result<Vec<Song>> {
         match self {
-            MpdBackend::Real(c) => c.queue(),
+            MpdBackend::Real(c) => c.get_queue(),
             MpdBackend::Mock(m) => m.queue(),
         }
     }
 
-    fn search(&mut self, query: &Query, window: Option<(u32, u32)>) -> Result<Vec<mpd::Song>> {
+    fn search(&mut self, query: &Query, _window: Option<(u32, u32)>) -> Result<Vec<Song>> {
         match self {
-            MpdBackend::Real(c) => c.search(query, window),
-            MpdBackend::Mock(m) => m.search(query, window),
+            MpdBackend::Real(c) => c.search(query),
+            MpdBackend::Mock(m) => m.search(query, _window),
         }
     }
 
     fn consume(&mut self, state: bool) -> Result<()> {
         match self {
-            MpdBackend::Real(c) => c.consume(state),
+            MpdBackend::Real(c) => c.set_consume(state),
             MpdBackend::Mock(m) => m.consume(state),
         }
     }
 
-    fn push(&mut self, song: mpd::Song) -> Result<mpd::Id> {
+    fn push(&mut self, file: &str) -> Result<u32> {
         match self {
-            MpdBackend::Real(c) => c.push(song),
-            MpdBackend::Mock(m) => m.push(song),
+            MpdBackend::Real(c) => {
+                c.queue_add(file)?;
+                Ok(0)
+            }
+            MpdBackend::Mock(m) => m.push(file),
         }
     }
 
     fn delete(&mut self, pos: u32) -> Result<()> {
         match self {
-            MpdBackend::Real(c) => c.delete(pos),
+            MpdBackend::Real(c) => c.queue_delete(pos),
             MpdBackend::Mock(m) => m.delete(pos),
         }
     }
@@ -75,30 +78,30 @@ impl MpdClient for MpdBackend {
         }
     }
 
-    fn pl_push(&mut self, playlist: &str, song: mpd::Song) -> Result<()> {
+    fn pl_push(&mut self, playlist: &str, file: &str) -> Result<()> {
         match self {
-            MpdBackend::Real(c) => c.pl_push(playlist, song),
-            MpdBackend::Mock(m) => m.pl_push(playlist, song),
+            MpdBackend::Real(c) => c.playlist_add(playlist, file),
+            MpdBackend::Mock(m) => m.pl_push(playlist, file),
         }
     }
 
     fn pl_delete(&mut self, playlist: &str, pos: u32) -> Result<()> {
         match self {
-            MpdBackend::Real(c) => c.pl_delete(playlist, pos),
+            MpdBackend::Real(c) => c.playlist_delete(playlist, pos),
             MpdBackend::Mock(m) => m.pl_delete(playlist, pos),
         }
     }
 
     fn pl_remove(&mut self, playlist: &str) -> Result<()> {
         match self {
-            MpdBackend::Real(c) => c.pl_remove(playlist),
+            MpdBackend::Real(c) => c.playlist_clear(playlist),
             MpdBackend::Mock(m) => m.pl_remove(playlist),
         }
     }
 
-    fn listall(&mut self) -> Result<Vec<mpd::Song>> {
+    fn listall(&mut self) -> Result<Vec<Song>> {
         match self {
-            MpdBackend::Real(c) => c.listall(),
+            MpdBackend::Real(c) => c.list_all_songs(),
             MpdBackend::Mock(m) => m.listall(),
         }
     }
@@ -106,9 +109,7 @@ impl MpdClient for MpdBackend {
 
 pub struct MpdConn {
     pub mpd: MpdBackend,
-    address: Vec<std::net::SocketAddr>,
-    // Store original host/port for parallel task creation
-    host: String,
+    address: String,
     port: u16,
     is_dev_mode: bool,
 }
@@ -121,87 +122,56 @@ impl MpdConn {
             info!("[!] JUKECTL_DEV_MODE is enabled, using MockMpd");
             return Ok(MpdConn {
                 mpd: MpdBackend::Mock(MockMpd::new()),
-                address: Vec::new(),
-                host: "mock".to_string(),
+                address: "mock".to_string(),
                 port: 0,
                 is_dev_mode: true,
             });
         }
 
         debug!("[!] connecting to mpd...");
-        let (mpd, address, host, port) = MpdConn::connect_mpd()?;
+        let host = env::var("MPD_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+        let port: u16 = env::var("MPD_PORT")
+            .unwrap_or_else(|_| "6600".to_string())
+            .parse()
+            .unwrap_or(6600);
+
+        let mpd = RawMpdClient::connect(&host, port)?;
+        mpd.set_consume(true)?;
+
         Ok(MpdConn {
             mpd: MpdBackend::Real(mpd),
-            address,
-            host,
+            address: host,
             port,
             is_dev_mode: false,
         })
     }
 
-    // New method for creating connections with specific host/port
     pub fn new_with_host(host: &str, port: u16) -> Result<Self> {
         let is_dev_mode = env::var("JUKECTL_DEV_MODE").unwrap_or_default() == "1";
 
         if is_dev_mode {
             return Ok(MpdConn {
                 mpd: MpdBackend::Mock(MockMpd::new()),
-                address: Vec::new(),
-                host: "mock".to_string(),
+                address: "mock".to_string(),
                 port: 0,
                 is_dev_mode: true,
             });
         }
 
         debug!("[!] connecting to mpd at {}:{}...", host, port);
-
-        // Resolve the host and port
-        let address = (host, port)
-            .to_socket_addrs()
-            .map_err(|e| mpd::error::Error::Io(e))?
-            .collect::<Vec<std::net::SocketAddr>>();
-
-        // Create an MPD client and connect using the resolved address
-        let mut mpd = Client::connect(address[0])?;
-
-        // Set consume to true as part of Jukectl
-        mpd.consume(true)?;
+        let mpd = RawMpdClient::connect(host, port)?;
+        mpd.set_consume(true)?;
 
         Ok(MpdConn {
             mpd: MpdBackend::Real(mpd),
-            address,
-            host: host.to_string(),
+            address: host.to_string(),
             port,
             is_dev_mode: false,
         })
     }
 
-    // Method to expose connection info for parallel tasks
     pub fn get_host_info(&self) -> (String, u16) {
-        (self.host.clone(), self.port)
-    }
-
-    fn connect_mpd() -> Result<(Client, Vec<std::net::SocketAddr>, String, u16)> {
-        // Get environment variables for MPD configuration
-        let host = env::var("MPD_HOST").unwrap_or_else(|_| "localhost".to_string());
-        let port: u16 = env::var("MPD_PORT")
-            .unwrap_or_else(|_| "6600".to_string())
-            .parse()
-            .expect("Failed to parse MPD_PORT as u16");
-
-        // Resolve the host and port once
-        let address = (host.as_str(), port)
-            .to_socket_addrs()
-            .map_err(|e| mpd::error::Error::Io(e))?
-            .collect::<Vec<std::net::SocketAddr>>();
-
-        // Create an MPD client and connect using the resolved address
-        let mut mpd = Client::connect(address[0])?;
-
-        // Set consume to true as part of Jukectl
-        mpd.consume(true)?;
-
-        Ok((mpd, address, host, port))
+        (self.address.clone(), self.port)
     }
 
     pub fn reconnect(&mut self) -> Result<()> {
@@ -209,35 +179,26 @@ impl MpdConn {
             return Ok(());
         }
 
-        debug!("[!] Checking connection...");
-        if self.is_connected()? {
-            debug!("[+] Connection is alive.");
-            return Ok(());
+        if !self.is_connected() {
+            debug!("[!] Reconnecting to mpd...");
+            let mpd = RawMpdClient::connect(&self.address, self.port)?;
+            mpd.set_consume(true)?;
+            self.mpd = MpdBackend::Real(mpd);
         }
-
-        debug!("[!] Reconnecting to mpd...");
-        let mut new_mpd = Client::connect(self.address[0])?;
-        new_mpd.consume(true)?;
-        self.mpd = MpdBackend::Real(new_mpd);
         Ok(())
     }
 
-    fn is_connected(&mut self) -> Result<bool> {
+    fn is_connected(&mut self) -> bool {
         if self.is_dev_mode {
-            return Ok(true);
+            return true;
         }
-
-        match self.mpd.ping() {
-            Ok(_) => Ok(true),
-            Err(e) => {
-                warn!("[!] Connection check failed: {}", e);
-                Ok(false)
-            }
-        }
+        self.ping().is_ok()
     }
 
-    // Expose search method for album-aware functionality
-    pub fn search(&mut self, query: &Query, window: Option<(u32, u32)>) -> Result<Vec<mpd::Song>> {
-        self.mpd.search(query, window)
+    pub fn ping(&mut self) -> Result<()> {
+        match &mut self.mpd {
+            MpdBackend::Real(c) => c.ping(),
+            MpdBackend::Mock(m) => m.ping(),
+        }
     }
 }

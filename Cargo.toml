@@ -1,3 +1,3 @@
 [workspace]
-members = ["server", "cli",] # "common"]
+members = ["server", "cli", "server/jukectl-mpdclient-sys"] # "common"]
 resolver = "2"
