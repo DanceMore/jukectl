@@ -965,7 +965,7 @@ dependencies = [
 
 [[package]]
 name = "jukectl"
-version = "0.2.26"
+version = "0.2.29"
 dependencies = [
  "clap",
  "colored",
@@ -982,6 +982,7 @@ dependencies = [
 name = "jukectl-server"
 version = "0.2.0"
 dependencies = [
+ "base64",
  "env_logger",
  "log",
  "mockall",

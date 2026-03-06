@@ -2,8 +2,8 @@
 extern crate rocket;
 
 // local imports
-mod app_state;
-use app_state::AppState;
+use jukectl_server::app_state;
+use jukectl_server::app_state::AppState;
 mod routes;
 mod scheduler;
 use scheduler::start_scheduler;
