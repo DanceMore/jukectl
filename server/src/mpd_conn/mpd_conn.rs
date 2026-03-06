@@ -1,10 +1,11 @@
 use mpd::{error::Result, Client, Query};
 use std::env;
 use std::net::ToSocketAddrs;
+use std::sync::OnceLock;
 
 use crate::mpd_conn::mock_mpd::MockMpd;
 use crate::mpd_conn::traits::MpdClient;
-use log::{debug, info, warn};
+use log::{debug, warn};
 
 pub enum MpdBackend {
     Real(Client),
@@ -113,14 +114,17 @@ pub struct MpdConn {
     is_dev_mode: bool,
 }
 
+static SHARED_MOCK: OnceLock<MockMpd> = OnceLock::new();
+
 impl MpdConn {
     pub fn new() -> Result<Self> {
         let is_dev_mode = env::var("JUKECTL_DEV_MODE").unwrap_or_default() == "1";
 
         if is_dev_mode {
-            info!("[!] JUKECTL_DEV_MODE is enabled, using MockMpd");
+            debug!("[!] JUKECTL_DEV_MODE is enabled, using MockMpd");
+            let mock = SHARED_MOCK.get_or_init(MockMpd::new).clone();
             return Ok(MpdConn {
-                mpd: MpdBackend::Mock(MockMpd::new()),
+                mpd: MpdBackend::Mock(mock),
                 address: Vec::new(),
                 host: "mock".to_string(),
                 port: 0,
@@ -144,8 +148,9 @@ impl MpdConn {
         let is_dev_mode = env::var("JUKECTL_DEV_MODE").unwrap_or_default() == "1";
 
         if is_dev_mode {
+            let mock = SHARED_MOCK.get_or_init(MockMpd::new).clone();
             return Ok(MpdConn {
-                mpd: MpdBackend::Mock(MockMpd::new()),
+                mpd: MpdBackend::Mock(mock),
                 address: Vec::new(),
                 host: "mock".to_string(),
                 port: 0,

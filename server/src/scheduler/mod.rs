@@ -3,16 +3,16 @@ use rocket::tokio::time::Duration;
 use std::io::Write;
 
 use crate::app_state::AppState;
-use jukectl_server::mpd_conn::traits::MpdClient;
+use crate::mpd_conn::traits::MpdClient;
 
 use log::{debug, info, trace};
 
-pub async fn start_scheduler(app_state: AppState) {
+pub async fn start_scheduler(app_state: AppState) -> tokio::task::JoinHandle<()> {
     info!("[+] Starting scheduler...");
-    tokio::spawn(scheduler_mainbody(app_state));
+    tokio::spawn(scheduler_mainbody(app_state))
 }
 
-async fn scheduler_mainbody(app_state: AppState) {
+pub async fn scheduler_mainbody(app_state: AppState) {
     let mut scheduler_cycle = 0u64;
 
     loop {
@@ -41,6 +41,7 @@ async fn scheduler_mainbody(app_state: AppState) {
         if locked_song_queue.len() == 0 {
             info!("[!] Scheduler: Queue empty, refilling...");
             locked_song_queue.shuffle_and_add(&*locked_tags_data, pooled_conn.mpd_conn());
+            debug!("[+] Scheduler refilled queue, new length: {}", locked_song_queue.len());
         }
 
         // Main MPD queue management
@@ -90,6 +91,11 @@ async fn scheduler_mainbody(app_state: AppState) {
         drop(locked_song_queue);
         drop(locked_tags_data);
 
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        let sleep_duration = if std::env::var("JUKECTL_DEV_MODE").unwrap_or_default() == "1" {
+            Duration::from_millis(100)
+        } else {
+            Duration::from_secs(3)
+        };
+        tokio::time::sleep(sleep_duration).await;
     }
 }
