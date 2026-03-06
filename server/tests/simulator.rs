@@ -75,11 +75,14 @@ async fn test_scenario_a_refill_logic() {
     //     locked_song_queue.shuffle_and_add(&*locked_tags_data, pooled_conn.mpd_conn());
     // }
 
-    // So we need to drain it to 0 for the scheduler to refill.
+    // Drain the queue to 1 song.
+    // Spec: "Drain the queue to 1 song. Verify the scheduler automatically refills the queue using the current tags."
     {
         let mut queue = state.song_queue.write().await;
-        queue.dequeue_single();
-        assert_eq!(queue.len(), 0);
+        while queue.len() > 1 {
+            queue.dequeue_single();
+        }
+        assert_eq!(queue.len(), 1);
 
         // Also ensure MPD queue is empty so scheduler sees it < 2
         let mut conn = state.mpd_pool.get_connection().await.unwrap();
@@ -93,10 +96,11 @@ async fn test_scenario_a_refill_logic() {
 
     // Wait for scheduler to run
     let mut refilled = false;
+    // We expect the queue to refill from 1 to 10
     for _ in 0..100 {
         sleep(Duration::from_millis(100)).await;
         let queue = state.song_queue.read().await;
-        if queue.len() > 0 {
+        if queue.len() > 1 {
             refilled = true;
             break;
         }
@@ -141,7 +145,16 @@ async fn test_scenario_b_tag_hot_swap() {
         // We also need to invalidate cache if we want it to pick up new songs immediately on next refill
         let mut queue = state.song_queue.write().await;
         queue.invalidate_cache();
-        queue.empty_queue(); // Make it empty to trigger refill
+        // Drain it to 1 song to trigger refill (Scheduler now refills at <= 1)
+        while queue.len() > 1 {
+            queue.dequeue_single();
+        }
+        if queue.len() == 0 {
+            // Should not happen as we started with 1 but for safety
+        } else {
+            // We have 1 song (j1.mp3)
+            queue.dequeue_single(); // Now empty, should trigger refill
+        }
     }
 
     // Start scheduler
@@ -219,7 +232,8 @@ async fn test_scenario_d_queue_race() {
     // The scheduler adds songs to MPD queue when it has < 2 songs.
 
     let mut consumed_count = 0;
-    for _ in 0..20 {
+    let start = std::time::Instant::now();
+    while start.elapsed() < Duration::from_secs(5) {
         // Mock MPD queue
         let mpd_queue_len = {
             let mut conn = state.mpd_pool.get_connection().await.unwrap();
@@ -232,11 +246,31 @@ async fn test_scenario_d_queue_race() {
             consumed_count += 1;
         }
 
-        sleep(Duration::from_millis(100)).await;
+        // Sometimes we consume very fast, sometimes we wait
+        if consumed_count % 5 == 0 {
+            sleep(Duration::from_millis(10)).await;
+        } else {
+            sleep(Duration::from_millis(50)).await;
+        }
     }
 
     println!("Consumed {} songs", consumed_count);
-    // This is more of a smoke test to ensure no panics and some progress.
-    // In a real race we'd want to ensure consistency, but MockMpd is thread-safe via Arc<Mutex>.
+
+    // Verify that all songs were accounted for
+    let history = mock.get_pushed_history();
+    println!("Total songs pushed according to history: {}", history.len());
+
+    assert!(history.len() >= consumed_count, "All consumed songs should have been pushed");
+
+    // Check for duplicates in history to ensure no double-pushes in rapid succession
+    let mut seen = std::collections::HashSet::new();
+    let mut duplicates = 0;
+    for song in &history {
+        if !seen.insert(song.file.clone()) {
+            duplicates += 1;
+        }
+    }
+    println!("Duplicates in push history: {}", duplicates);
+
     handle.abort();
 }

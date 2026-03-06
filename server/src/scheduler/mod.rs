@@ -37,9 +37,9 @@ pub async fn scheduler_mainbody(app_state: AppState) {
         let mut locked_song_queue = app_state.song_queue.write().await;
         let locked_tags_data = app_state.tags_data.read().await;
 
-        // Check if SongQueue is empty and refill if needed
-        if locked_song_queue.len() == 0 {
-            info!("[!] Scheduler: Queue empty, refilling...");
+        // Check if SongQueue is empty or near empty and refill if needed
+        if locked_song_queue.len() <= 1 {
+            info!("[!] Scheduler: Queue at {}, refilling...", locked_song_queue.len());
             locked_song_queue.shuffle_and_add(&*locked_tags_data, pooled_conn.mpd_conn());
             debug!("[+] Scheduler refilled queue, new length: {}", locked_song_queue.len());
         }

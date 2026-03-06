@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 pub struct MockMpd {
     playlists: Arc<Mutex<HashMap<String, Vec<Song>>>>,
     queue: Arc<Mutex<Vec<Song>>>,
+    pushed_history: Arc<Mutex<Vec<Song>>>,
     is_consuming: Arc<Mutex<bool>>,
     connection_state: Arc<Mutex<bool>>, // true if connected
 }
@@ -16,6 +17,7 @@ impl MockMpd {
         MockMpd {
             playlists: Arc::new(Mutex::new(HashMap::new())),
             queue: Arc::new(Mutex::new(Vec::new())),
+            pushed_history: Arc::new(Mutex::new(Vec::new())),
             is_consuming: Arc::new(Mutex::new(false)),
             connection_state: Arc::new(Mutex::new(true)),
         }
@@ -43,8 +45,13 @@ impl MockMpd {
     pub fn clear_state(&self) {
         self.playlists.lock().unwrap().clear();
         self.queue.lock().unwrap().clear();
+        self.pushed_history.lock().unwrap().clear();
         *self.is_consuming.lock().unwrap() = false;
         *self.connection_state.lock().unwrap() = true;
+    }
+
+    pub fn get_pushed_history(&self) -> Vec<Song> {
+        self.pushed_history.lock().unwrap().clone()
     }
 
     fn check_connection(&self) -> Result<()> {
@@ -119,7 +126,8 @@ impl MpdClient for MockMpd {
     fn push(&mut self, song: Song) -> Result<mpd::Id> {
         self.check_connection()?;
         let mut queue = self.queue.lock().unwrap();
-        queue.push(song);
+        queue.push(song.clone());
+        self.pushed_history.lock().unwrap().push(song);
         Ok(mpd::Id(queue.len() as u32))
     }
 
