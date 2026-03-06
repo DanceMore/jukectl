@@ -2,10 +2,10 @@ use rocket::tokio::sync::RwLock;
 use std::env;
 use std::sync::Arc;
 
-use jukectl_server::models::song_queue::SongQueue;
-use jukectl_server::models::tags_data::TagsData;
-use jukectl_server::mpd_conn::mpd_conn::MpdConn;
-use jukectl_server::mpd_conn::mpd_pool::MpdConnectionPool;
+use crate::models::song_queue::SongQueue;
+use crate::models::tags_data::TagsData;
+use crate::mpd_conn::mpd_conn::MpdConn;
+use crate::mpd_conn::mpd_pool::MpdConnectionPool;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -44,10 +44,7 @@ pub async fn initialize() -> AppState {
     let song_queue = Arc::new(RwLock::new(SongQueue::new()));
 
     // Default tags
-    let default_tags_data = TagsData {
-        any: vec!["jukebox".to_string()],
-        not: vec!["explicit".to_string()],
-    };
+    let default_tags_data = load_default_tags();
     let tags_data = Arc::new(RwLock::new(default_tags_data));
 
     let album_aware = Arc::new(RwLock::new(false));
@@ -73,4 +70,31 @@ pub async fn initialize_queue(state: &AppState) {
 
     // Initial queue fill - uses cache internally
     locked_song_queue.shuffle_and_add(&*locked_tags_data, &mut *locked_mpd_conn);
+}
+
+pub fn load_default_tags() -> TagsData {
+    let fallback = TagsData {
+        any: vec!["jukebox".to_string()],
+        not: vec!["explicit".to_string()],
+    };
+
+    match env::var("JUKECTL_DEFAULT_TAGS_B64") {
+        Ok(b64_tags) => {
+            use base64::{engine::general_purpose, Engine as _};
+            match general_purpose::STANDARD.decode(b64_tags) {
+                Ok(decoded) => match serde_json::from_slice::<TagsData>(&decoded) {
+                    Ok(tags) => tags,
+                    Err(e) => {
+                        log::warn!("[!] Failed to parse JUKECTL_DEFAULT_TAGS_B64 as JSON: {}", e);
+                        fallback
+                    }
+                },
+                Err(e) => {
+                    log::warn!("[!] Failed to decode JUKECTL_DEFAULT_TAGS_B64 as Base64: {}", e);
+                    fallback
+                }
+            }
+        }
+        Err(_) => fallback,
+    }
 }

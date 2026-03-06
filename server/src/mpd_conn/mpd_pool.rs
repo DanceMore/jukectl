@@ -257,6 +257,8 @@ mod tests {
             return;
         }
 
+        use crate::mpd_conn::traits::MpdClient;
+
         let pool = MpdConnectionPool::new("localhost", 6600, 5)
             .await
             .expect("Failed to create pool");
@@ -300,6 +302,7 @@ mod tests {
         for i in 0..5 {
             let pool_clone = pool.clone();
             let handle = tokio::spawn(async move {
+                use crate::mpd_conn::traits::MpdClient;
                 let mut conn = pool_clone
                     .get_connection()
                     .await
