@@ -3,7 +3,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::app_state::AppState;
-use jukectl_server::models::tags_data::TagsData;
+use jukectl_server::models::tags_data::{TagInfo, TagsData};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagsResponse {
@@ -198,7 +198,7 @@ async fn refresh_cache(app_state: &rocket::State<AppState>) -> Json<serde_json::
 }
 
 #[get("/tags/available")]
-async fn list_available_tags(app_state: &rocket::State<AppState>) -> Json<Vec<String>> {
+async fn list_available_tags(app_state: &rocket::State<AppState>) -> Json<Vec<TagInfo>> {
     // Get connection from pool
     let mut pooled_conn = match app_state.mpd_pool.get_connection().await {
         Ok(conn) => conn,

@@ -6,6 +6,12 @@ use crate::mpd_conn::mpd_conn::MpdConn;
 use crate::mpd_conn::traits::MpdClient;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagInfo {
+    pub name: String,
+    pub track_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagsData {
     pub any: Vec<String>,
     pub not: Vec<String>,
@@ -82,14 +88,22 @@ impl TagsData {
         true
     }
 
-    /// List all available playlists from MPD that aren't ad-hoc playlists
-    pub fn list_available_tags(mpd_client: &mut MpdConn) -> Vec<String> {
+    /// List all available playlists from MPD that aren't ad-hoc playlists, with track counts
+    pub fn list_available_tags(mpd_client: &mut MpdConn) -> Vec<TagInfo> {
         match mpd_client.mpd.playlists() {
             Ok(playlists) => {
                 let p: Vec<mpd::Playlist> = playlists;
                 p.into_iter()
                     .map(|p| p.name)
                     .filter(|name| !Self::is_adhoc_playlist(name))
+                    .map(|name| {
+                        let track_count = mpd_client
+                            .mpd
+                            .playlist(&name)
+                            .map(|songs| songs.len())
+                            .unwrap_or(0);
+                        TagInfo { name, track_count }
+                    })
                     .collect()
             }
             Err(e) => {

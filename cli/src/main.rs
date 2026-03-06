@@ -356,9 +356,20 @@ async fn status(api_hostname: &str) -> Result<(), reqwest::Error> {
     Ok(())
 }
 
+#[derive(Debug, Deserialize)]
+struct TagInfo {
+    name: String,
+    track_count: usize,
+}
+
 async fn list_available_tags(api_hostname: &str) -> Result<(), reqwest::Error> {
     print_banner();
-    println!("{}", "available jukebox tags:".cyan().bold());
+    println!(
+        "{}",
+        "available jukebox tags (sorted by popularity):"
+            .cyan()
+            .bold()
+    );
 
     let client = reqwest::Client::new();
     let url = format!("{}/tags/available", api_hostname);
@@ -366,17 +377,20 @@ async fn list_available_tags(api_hostname: &str) -> Result<(), reqwest::Error> {
     let response = client.get(&url).send().await?;
 
     if response.status().is_success() {
-        let tags: Vec<String> = response.json().await?;
+        let mut tags: Vec<TagInfo> = response.json().await?;
         if tags.is_empty() {
             println!("  {}", "no tags found.".red());
         } else {
-            // Sort tags for better readability
-            let mut sorted_tags = tags;
-            sorted_tags.sort();
+            // Sort tags by track_count descending
+            tags.sort_by(|a, b| b.track_count.cmp(&a.track_count));
 
-            for (index, tag) in sorted_tags.iter().enumerate() {
+            for (index, tag) in tags.iter().enumerate() {
                 let color = if index % 2 == 0 { "green" } else { "yellow" };
-                println!("  {}", tag.color(color).bold());
+                println!(
+                    "  {: <20} ({:>4} tracks)",
+                    tag.name.color(color).bold(),
+                    tag.track_count.to_string().white()
+                );
             }
         }
     } else {
