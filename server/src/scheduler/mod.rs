@@ -5,7 +5,7 @@ use std::io::Write;
 use crate::app_state::AppState;
 use jukectl_server::mpd_conn::traits::MpdClient;
 
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, trace};
 
 pub async fn start_scheduler(app_state: AppState) {
     info!("[+] Starting scheduler...");

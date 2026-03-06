@@ -4,7 +4,7 @@ use std::net::ToSocketAddrs;
 
 use crate::mpd_conn::mock_mpd::MockMpd;
 use crate::mpd_conn::traits::MpdClient;
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, warn};
 
 pub enum MpdBackend {
     Real(Client),
