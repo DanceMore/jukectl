@@ -10,7 +10,10 @@ This document provides instructions for AI agents (like Google Jules, Gemini CLI
 
 ## Local Development & Mocking
 
-`jukectl` is designed to be developed without a real MPD (Music Player Daemon) instance.
+`jukectl` is designed to be developed without a real MPD (Music Player Daemon) instance. 
+
+- **Dispatching to Jules**: See [JULES_GUIDE.md](JULES_GUIDE.md) for tips on how to effectively assign tasks to Google Jules.
+- **Active Backlog**: See [ROADMAP.md](ROADMAP.md) for high-fidelity task specifications ready for implementation.
 
 ### JUKECTL_DEV_MODE
 To run the server in a purely virtual environment with an in-memory MPD mock:
