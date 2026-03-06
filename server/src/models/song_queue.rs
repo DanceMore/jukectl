@@ -164,7 +164,7 @@ impl SongQueue {
     }
 
     pub fn shuffle_and_add(&mut self, tags: &crate::models::tags_data::TagsData, mpd: &mut dyn MpdClient) {
-        let mut all_songs = mpd.listall().unwrap_or_default();
+        let all_songs = mpd.listall().unwrap_or_default();
         
         // Filter by tags
         let filtered_songs: Vec<Song> = all_songs.into_iter().filter(|s| {

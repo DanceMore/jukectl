@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
 
 use crate::mpd_conn::mpd_conn::MpdConn;
-use crate::mpd_conn::traits::MpdClient;
 
 pub struct MpdPool {
     connections: Arc<Mutex<Vec<MpdConn>>>,

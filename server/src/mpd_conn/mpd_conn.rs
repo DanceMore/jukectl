@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::env;
 
 use crate::mpd_conn::mock_mpd::MockMpd;

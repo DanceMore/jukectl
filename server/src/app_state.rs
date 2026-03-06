@@ -4,9 +4,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::models::song_queue::SongQueue;
 use crate::models::tags_data::TagsData;
-use crate::mpd_conn::mpd_conn::MpdConn;
 use crate::mpd_conn::mpd_pool::MpdPool;
-use crate::mpd_conn::traits::MpdClient;
 
 pub struct Config {
     pub album_aware_shuffle: bool,
